@@ -279,6 +279,7 @@ class RolePayload(BaseModel):
     name: str = Field(min_length=1,max_length=100)
     permission_ids: list[int] = Field(default_factory=list)
     project_ids: list[int] = Field(default_factory=list)
+    is_enabled: bool = True
 
 @app.post(BASE+'/api/roles')
 def create_role(data:RolePayload,request:Request):
@@ -307,8 +308,8 @@ def create_role(data:RolePayload,request:Request):
             if len(valid_proj)!=len(set(data.project_ids)):
                 raise HTTPException(400,'包含无效的项目')
         code='role_'+secrets.token_hex(4)
-        c.execute('INSERT INTO sys_role(code,name,is_enabled,created_by,updated_by) VALUES(%s,%s,1,%s,%s)',
-                  (code,name,user['id'],user['id']))
+        c.execute('INSERT INTO sys_role(code,name,is_enabled,created_by,updated_by) VALUES(%s,%s,%s,%s,%s)',
+                  (code,name,int(bool(data.is_enabled)),user['id'],user['id']))
         role_id=c.lastrowid
         for pid in set(data.permission_ids):
             c.execute('INSERT INTO sys_role_permission(role_id,permission_id,created_by) VALUES(%s,%s,%s)',
@@ -367,8 +368,8 @@ def update_role(role_id:int,data:RolePayload,request:Request):
             if len(valid_proj)!=len(set(data.project_ids)):
                 raise HTTPException(400,'包含无效的项目')
         before={'name':row['name'],'is_enabled':bool(row['is_enabled'])}
-        c.execute('UPDATE sys_role SET name=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
-                  (name,user['id'],role_id))
+        c.execute('UPDATE sys_role SET name=%s,is_enabled=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (name,int(bool(data.is_enabled)),user['id'],role_id))
         c.execute('DELETE FROM sys_role_permission WHERE role_id=%s',(role_id,))
         for pid in set(data.permission_ids):
             c.execute('INSERT INTO sys_role_permission(role_id,permission_id,created_by) VALUES(%s,%s,%s)',
@@ -377,7 +378,7 @@ def update_role(role_id:int,data:RolePayload,request:Request):
         for pid in set(data.project_ids):
             c.execute('INSERT INTO sys_role_project(role_id,project_id,created_by) VALUES(%s,%s,%s)',
                       (role_id,pid,user['id']))
-        after={'name':name,'is_enabled':bool(row['is_enabled']),
+        after={'name':name,'is_enabled':bool(data.is_enabled),
                'permission_ids':sorted(set(data.permission_ids)),'project_ids':sorted(set(data.project_ids))}
         audit(c,user['id'],'role.edit','sys_role',role_id,before,after)
     return {'ok':True,'row_version':row['row_version']+1}
