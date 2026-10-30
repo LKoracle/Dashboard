@@ -4,10 +4,19 @@
 -- docker exec -i pet-db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot --default-character-set=utf8mb4 dashboard' < seed_metric_categories.sql
 
 INSERT IGNORE INTO metric_category(code,name,metric_code_prefix,last_sequence,display_order,is_enabled,created_by,updated_by) VALUES
- ('coverage','用户覆盖','YHFG',0,1,1,1,1),
- ('activity','用户活跃','YHHY',0,2,1,1,1),
- ('depth','使用深度','SYSD',0,3,1,1,1),
- ('retention','用户留存','YHLC',0,4,1,1,1),
- ('feature','功能使用','GNSY',0,5,1,1,1),
- ('performance','性能表现','XNBX',0,6,1,1,1),
+ ('activity','用户活跃','YHHY',0,1,1,1,1),
+ ('coverage','用户覆盖','YHFG',0,2,1,1,1),
+ ('retention','用户留存','YHLC',0,3,1,1,1),
+ ('depth','使用深度','SYSD',0,4,1,1,1),
+ ('performance','性能表现','XNBX',0,5,1,1,1),
+ ('feature','功能使用','GNSY',0,6,1,1,1),
  ('funnel','漏斗指标','LDZB',0,7,1,1,1);
+
+-- 分类排序对齐原型（幂等修正：已存在的行也按此顺序更新）
+UPDATE metric_category SET display_order=1 WHERE code='activity';
+UPDATE metric_category SET display_order=2 WHERE code='coverage';
+UPDATE metric_category SET display_order=3 WHERE code='retention';
+UPDATE metric_category SET display_order=4 WHERE code='depth';
+UPDATE metric_category SET display_order=5 WHERE code='performance';
+UPDATE metric_category SET display_order=6 WHERE code='feature';
+UPDATE metric_category SET display_order=7 WHERE code='funnel';

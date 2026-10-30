@@ -180,7 +180,7 @@ function renderMaintain(){content.replaceChildren();
  const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
  titleRow.append(el('h1','指标数据维护'),el('p','按项目、统计日期维护已启用指标的数值数据。','subtitle'));
  heading.append(titleRow);content.append(heading);
- const ctx=el('section',undefined,'card mt-context');
+ const ctx=el('div',undefined,'mt-context');
  const tabs=el('div',undefined,'mt-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','切换项目');
  for(const p of mtBoot.projects){const b=el('button',p.name,'mt-tab'+(p.id===mtProject?' active':''));b.type='button';b.setAttribute('aria-pressed',String(p.id===mtProject));b.addEventListener('click',()=>mtSwitchProject(p.id));tabs.append(b);}
  ctx.append(tabs);
