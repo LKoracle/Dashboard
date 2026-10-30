@@ -54,3 +54,7 @@
 .metric-config-table th:first-child{min-width:90px}
 .metric-config-table th:nth-child(2),.metric-config-table td:nth-child(2){padding-left:10px;padding-right:10px}
 .metric-config-table th:nth-child(3),.metric-config-table td:nth-child(3){min-width:200px}
+
+/* 指标管理：收紧开关列，为适用项目保留空间。 */
+.metric-config-table th:nth-child(7),.metric-config-table td:nth-child(7){min-width:214px}
+.metric-config-table th:nth-child(8),.metric-config-table td:nth-child(8),.metric-config-table th:nth-child(9),.metric-config-table td:nth-child(9){padding-left:10px;padding-right:10px;text-align:center}
