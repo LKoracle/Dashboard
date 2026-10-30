@@ -10,7 +10,7 @@ from argon2.exceptions import VerificationError, InvalidHashError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, model_validator
 
 BASE = os.getenv('BASE_PATH', '/dashboard').rstrip('/')
 ORIGIN = os.getenv('PUBLIC_ORIGIN', 'https://129.226.194.82').rstrip('/')
@@ -815,6 +815,12 @@ class MetricPayload(BaseModel):
     decimal_places: int = Field(default=1,ge=0,le=5,strict=True)
     definition: str = ''
     beidou_metric_code: str = Field(default='',max_length=100)
+
+    @model_validator(mode='after')
+    def default_precision_for_unit(self):
+        if 'decimal_places' not in self.model_fields_set:
+            self.decimal_places={'人':0,'次':0,'%':1,'秒':2}.get(self.unit.strip(),1)
+        return self
 
 class MetricSwitch(BaseModel):
     is_enabled: StrictBool | None = None

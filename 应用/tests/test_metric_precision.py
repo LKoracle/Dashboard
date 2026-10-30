@@ -51,3 +51,8 @@ def test_zero_precision_and_fraction_limits():
  metric['decimal_places']=5
  assert module._validate_value('12.12345',metric)=='12.12345'
  with pytest.raises(module.HTTPException):module._validate_value('12.123456',metric)
+
+@pytest.mark.parametrize('unit,expected',[('人',0),('次',0),('%',1),('秒',2),('分钟／次',1)])
+def test_unit_default_and_manual_override(unit,expected):
+ assert module.MetricPayload(name='测试',category_id=1,project_id=1,unit=unit).decimal_places==expected
+ assert module.MetricPayload(name='测试',category_id=1,project_id=1,unit=unit,decimal_places=4).decimal_places==4
