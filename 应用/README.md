@@ -61,3 +61,5 @@ systemctl list-timers dashboard-cert-renew.timer
 `deploy.py` / `bootstrap.py` 仅用于首次初始化；发现现有 admin 时拒绝覆盖，不能用于重置密码。升级仅替换已确认的应用代码并重启服务。密码变更流程与账号管理在后续实现。
 
 IP 证书为短期证书，必须保持定时续期、Docker 网关以及 HTTP 80 验证入口可用；服务器 IP 变更后需要重新签发并同步 PUBLIC_ORIGIN。数据库仍需完善异机备份与恢复演练。
+
+<!-- auto-deploy test: 2026-10-30 19:10:47 -->
