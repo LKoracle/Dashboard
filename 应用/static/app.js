@@ -121,7 +121,6 @@ function mtFieldBlock(m,fid,compact){const k=mtKey(m.id,fid);
  if(compact)return wrap;
  const lab=el('label',undefined,'maint-label');lab.htmlFor='mt-'+k;
  lab.append(el('span',m.name,'maint-name'));
- lab.append(el('small',m.code,'maint-code'));
  if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;lab.append(tip);}
  wrap.prepend(lab);return wrap;}
 function mtValidateAll(items,errs){
@@ -162,7 +161,7 @@ function mtSection(cat){const metrics=mtMetricsOf(cat.id);
   if(!metrics.length){section.append(el('p','当前项目暂无已启用的功能使用指标，请先到「指标配置」中维护。','maint-empty'));return section;}
   const wrap=el('div',undefined,'table-wrap');const table=el('table',undefined,'maint-feature-table');
   const thead=el('thead'),trh=el('tr');trh.append(el('th','功能'));
-  trh.append(...metrics.map(m=>{const th=el('th');const line=el('span',undefined,'maint-th-line');line.append(el('span',m.name+(m.unit?'（'+m.unit+'）':'')));if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;line.append(tip);}th.append(line,el('small',m.code,'maint-code'));return th;}));
+  trh.append(...metrics.map(m=>{const th=el('th');const line=el('span',undefined,'maint-th-line');line.append(el('span',m.name+(m.unit?'（'+m.unit+'）':'')));if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;line.append(tip);}th.append(line);return th;}));
   thead.append(trh);table.append(thead);
   const tbody=el('tbody');
   for(const f of features){const tr=el('tr');tr.append(el('td',f.name,'maint-feature-name'));
