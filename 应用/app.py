@@ -220,17 +220,230 @@ def update_menu(menu_id:int,data:MenuUpdate,request:Request):
         audit(c,user['id'],'menu.enable' if data.is_enabled else 'menu.disable','sys_menu',menu_id,before,after)
     return {'ok':True,**after}
 
+# ---- 角色管理 ----
+
+def _role_tree(c):
+    c.execute('''SELECT id,code,parent_id,name,route_path,display_order,is_enabled FROM sys_menu ORDER BY display_order,id''')
+    menus = c.fetchall()
+    c.execute('''SELECT id,menu_id,code,name,action_key,display_order,is_enabled FROM sys_permission ORDER BY display_order,id''')
+    perms = c.fetchall()
+    return menus, perms
+
+@app.get(BASE+'/api/roles')
+def list_roles(request:Request):
+    user=actor(request)
+    check_permission(user,'role.view')
+    can_edit=True
+    try:
+        check_permission(user,'role.edit')
+    except HTTPException:
+        can_edit=False
+    with database() as c:
+        c.execute('''SELECT id,code,name,is_enabled,row_version FROM sys_role ORDER BY id''')
+        roles=c.fetchall()
+        c.execute('''SELECT role_id,COUNT(*) AS cnt FROM sys_role_permission GROUP BY role_id''')
+        perm_counts={r['role_id']:r['cnt'] for r in c.fetchall()}
+        c.execute('''SELECT rp.role_id, p.name FROM sys_role_project rp JOIN project p ON p.id=rp.project_id ORDER BY p.display_order,p.id''')
+        projects={}
+        for r in c.fetchall():
+            projects.setdefault(r['role_id'],[]).append(r['name'])
+        c.execute('''SELECT role_id,COUNT(*) AS cnt FROM sys_user_role GROUP BY role_id''')
+        user_counts={r['role_id']:r['cnt'] for r in c.fetchall()}
+    items=[]
+    for r in roles:
+        items.append({'id':r['id'],'code':r['code'],'name':r['name'],'is_enabled':bool(r['is_enabled']),
+            'row_version':r['row_version'],'permission_count':perm_counts.get(r['id'],0),
+            'projects':projects.get(r['id'],[]),'user_count':user_counts.get(r['id'],0)})
+    return {'items':items,'can_edit':can_edit}
+
+@app.get(BASE+'/api/roles/meta')
+def roles_meta(request:Request):
+    user=actor(request)
+    check_permission(user,'role.view')
+    with database() as c:
+        menus, perms = _role_tree(c)
+        c.execute('SELECT id,code,name,is_enabled FROM project ORDER BY display_order,id')
+        projects=c.fetchall()
+    # 构建菜单树（含权限项），供表单复用
+    tree=[]
+    for m in menus:
+        node={'id':m['id'],'code':m['code'],'parent_id':m['parent_id'],'name':m['name'],
+              'is_enabled':bool(m['is_enabled']),'permissions':[]}
+        for p in perms:
+            if p['menu_id']==m['id']:
+                node['permissions'].append({'id':p['id'],'code':p['code'],'name':p['name'],'is_enabled':bool(p['is_enabled'])})
+        tree.append(node)
+    return {'menus':tree,'projects':[{'id':p['id'],'code':p['code'],'name':p['name'],'is_enabled':bool(p['is_enabled'])} for p in projects]}
+
+class RolePayload(BaseModel):
+    name: str = Field(min_length=1,max_length=100)
+    permission_ids: list[int] = Field(default_factory=list)
+    project_ids: list[int] = Field(default_factory=list)
+
+@app.post(BASE+'/api/roles')
+def create_role(data:RolePayload,request:Request):
+    user=actor(request)
+    check_permission(user,'role.create')
+    mutation(request)
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'角色名称不能为空')
+    with database() as c:
+        c.execute('SELECT id FROM sys_role WHERE name=%s',(name,))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同名角色')
+        # 校验权限 ID 有效
+        if data.permission_ids:
+            fmt=','.join(['%s']*len(data.permission_ids))
+            c.execute(f'SELECT id FROM sys_permission WHERE id IN ({fmt})',tuple(data.permission_ids))
+            valid={r['id'] for r in c.fetchall()}
+            if len(valid)!=len(set(data.permission_ids)):
+                raise HTTPException(400,'包含无效的权限项')
+        # 校验项目 ID 有效
+        if data.project_ids:
+            fmt=','.join(['%s']*len(data.project_ids))
+            c.execute(f'SELECT id FROM project WHERE id IN ({fmt})',tuple(data.project_ids))
+            valid_proj={r['id'] for r in c.fetchall()}
+            if len(valid_proj)!=len(set(data.project_ids)):
+                raise HTTPException(400,'包含无效的项目')
+        code='role_'+secrets.token_hex(4)
+        c.execute('INSERT INTO sys_role(code,name,is_enabled,created_by,updated_by) VALUES(%s,%s,1,%s,%s)',
+                  (code,name,user['id'],user['id']))
+        role_id=c.lastrowid
+        for pid in set(data.permission_ids):
+            c.execute('INSERT INTO sys_role_permission(role_id,permission_id,created_by) VALUES(%s,%s,%s)',
+                      (role_id,pid,user['id']))
+        for pid in set(data.project_ids):
+            c.execute('INSERT INTO sys_role_project(role_id,project_id,created_by) VALUES(%s,%s,%s)',
+                      (role_id,pid,user['id']))
+        audit(c,user['id'],'role.create','sys_role',role_id,None,
+              {'name':name,'permission_ids':sorted(set(data.permission_ids)),'project_ids':sorted(set(data.project_ids))})
+    return {'ok':True,'id':role_id}
+
+@app.get(BASE+'/api/roles/{role_id}')
+def get_role(role_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'role.view')
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,row_version FROM sys_role WHERE id=%s',(role_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'角色不存在')
+        c.execute('SELECT permission_id FROM sys_role_permission WHERE role_id=%s',(role_id,))
+        permission_ids=[r['permission_id'] for r in c.fetchall()]
+        c.execute('SELECT project_id FROM sys_role_project WHERE role_id=%s',(role_id,))
+        project_ids=[r['project_id'] for r in c.fetchall()]
+    return {'id':row['id'],'code':row['code'],'name':row['name'],'is_enabled':bool(row['is_enabled']),
+            'row_version':row['row_version'],'permission_ids':permission_ids,'project_ids':project_ids}
+
+@app.put(BASE+'/api/roles/{role_id}')
+def update_role(role_id:int,data:RolePayload,request:Request):
+    user=actor(request)
+    check_permission(user,'role.edit')
+    mutation(request)
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'角色名称不能为空')
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,row_version FROM sys_role WHERE id=%s FOR UPDATE',(role_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'角色不存在')
+        if row['code']=='super_admin':
+            raise HTTPException(403,'不能修改超级管理员角色')
+        c.execute('SELECT id FROM sys_role WHERE name=%s AND id<>%s',(name,role_id))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同名角色')
+        if data.permission_ids:
+            fmt=','.join(['%s']*len(data.permission_ids))
+            c.execute(f'SELECT id FROM sys_permission WHERE id IN ({fmt})',tuple(data.permission_ids))
+            valid={r['id'] for r in c.fetchall()}
+            if len(valid)!=len(set(data.permission_ids)):
+                raise HTTPException(400,'包含无效的权限项')
+        if data.project_ids:
+            fmt=','.join(['%s']*len(data.project_ids))
+            c.execute(f'SELECT id FROM project WHERE id IN ({fmt})',tuple(data.project_ids))
+            valid_proj={r['id'] for r in c.fetchall()}
+            if len(valid_proj)!=len(set(data.project_ids)):
+                raise HTTPException(400,'包含无效的项目')
+        before={'name':row['name'],'is_enabled':bool(row['is_enabled'])}
+        c.execute('UPDATE sys_role SET name=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (name,user['id'],role_id))
+        c.execute('DELETE FROM sys_role_permission WHERE role_id=%s',(role_id,))
+        for pid in set(data.permission_ids):
+            c.execute('INSERT INTO sys_role_permission(role_id,permission_id,created_by) VALUES(%s,%s,%s)',
+                      (role_id,pid,user['id']))
+        c.execute('DELETE FROM sys_role_project WHERE role_id=%s',(role_id,))
+        for pid in set(data.project_ids):
+            c.execute('INSERT INTO sys_role_project(role_id,project_id,created_by) VALUES(%s,%s,%s)',
+                      (role_id,pid,user['id']))
+        after={'name':name,'is_enabled':bool(row['is_enabled']),
+               'permission_ids':sorted(set(data.permission_ids)),'project_ids':sorted(set(data.project_ids))}
+        audit(c,user['id'],'role.edit','sys_role',role_id,before,after)
+    return {'ok':True,'row_version':row['row_version']+1}
+
+class RoleStatus(BaseModel):
+    is_enabled: StrictBool
+    row_version: int = Field(ge=1)
+
+@app.patch(BASE+'/api/roles/{role_id}')
+def toggle_role(role_id:int,data:RoleStatus,request:Request):
+    user=actor(request)
+    check_permission(user,'role.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,code,is_enabled,row_version FROM sys_role WHERE id=%s FOR UPDATE',(role_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'角色不存在')
+        if row['code']=='super_admin':
+            raise HTTPException(403,'不能停用超级管理员角色')
+        if row['row_version']!=data.row_version:
+            raise HTTPException(409,'此角色已被其他操作更新，请刷新后重试')
+        if bool(row['is_enabled'])==data.is_enabled:
+            return {'ok':True,'row_version':row['row_version']}
+        before={'is_enabled':bool(row['is_enabled']),'row_version':row['row_version']}
+        c.execute('UPDATE sys_role SET is_enabled=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (int(data.is_enabled),user['id'],role_id))
+        after={'is_enabled':data.is_enabled,'row_version':row['row_version']+1}
+        audit(c,user['id'],'role.enable' if data.is_enabled else 'role.disable','sys_role',role_id,before,after)
+    return {'ok':True,**after}
+
+@app.delete(BASE+'/api/roles/{role_id}')
+def delete_role(role_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'role.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,code,name FROM sys_role WHERE id=%s FOR UPDATE',(role_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'角色不存在')
+        if row['code']=='super_admin':
+            raise HTTPException(403,'不能删除超级管理员角色')
+        c.execute('SELECT COUNT(*) AS cnt FROM sys_user_role WHERE role_id=%s',(role_id,))
+        if c.fetchone()['cnt']>0:
+            raise HTTPException(409,'该角色仍分配给了用户，无法删除')
+        c.execute('DELETE FROM sys_role_permission WHERE role_id=%s',(role_id,))
+        c.execute('DELETE FROM sys_role_project WHERE role_id=%s',(role_id,))
+        c.execute('DELETE FROM sys_role WHERE id=%s',(role_id,))
+        audit(c,user['id'],'role.delete','sys_role',role_id,{'name':row['name']},None)
+    return {'ok':True}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
 
 @app.get(BASE+'/')
 @app.get(BASE+'/settings/menus')
+@app.get(BASE+'/settings/roles')
 def protected_page(request:Request):
     try:
         user=actor(request)
         if request.url.path.endswith('/settings/menus'):
             check_permission(user,'menu.view')
+        elif request.url.path.endswith('/settings/roles'):
+            check_permission(user,'role.view')
     except HTTPException as e:
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)
