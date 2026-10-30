@@ -804,6 +804,220 @@ def reset_user_password(user_id:int,request:Request):
               {'login_id':row['login_id']},{'password':'系统初始密码'})
     return {'ok':True}
 
+# ---- 指标配置 ----
+
+class MetricPayload(BaseModel):
+    name: str = Field(min_length=1,max_length=100)
+    category_id: int
+    project_id: int
+    english_name: str = Field(default='',max_length=200)
+    unit: str = Field(default='',max_length=32)
+    definition: str = ''
+    beidou_metric_code: str = Field(default='',max_length=100)
+
+class MetricSwitch(BaseModel):
+    is_enabled: StrictBool | None = None
+    is_key_metric: StrictBool | None = None
+    show_trend: StrictBool | None = None
+    row_version: int = Field(ge=1)
+
+def _metric_categories(c):
+    c.execute('''SELECT id,code,name,metric_code_prefix,last_sequence,display_order,is_enabled
+                 FROM metric_category ORDER BY display_order,id''')
+    rows=c.fetchall()
+    for r in rows:
+        r['next_code']=r['metric_code_prefix']+str(r['last_sequence']+1).zfill(4)
+    return rows
+
+@app.get(BASE+'/api/metrics')
+def list_metrics(request:Request):
+    user=actor(request)
+    check_permission(user,'metric.view')
+    can_edit=True
+    try:
+        check_permission(user,'metric.edit')
+    except HTTPException:
+        can_edit=False
+    can_create=True
+    try:
+        check_permission(user,'metric.create')
+    except HTTPException:
+        can_create=False
+    with database() as c:
+        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.definition,m.definition_status,
+                     m.is_key_metric,m.show_trend,m.is_enabled,m.row_version,m.project_id,m.category_id,
+                     m.beidou_metric_code,m.display_order,p.name AS project_name,cat.name AS category_name
+                     FROM metric m JOIN project p ON p.id=m.project_id
+                     JOIN metric_category cat ON cat.id=m.category_id
+                     ORDER BY m.display_order,m.id''')
+        rows=c.fetchall()
+        categories=_metric_categories(c)
+        c.execute('SELECT id,name,is_enabled FROM project ORDER BY display_order,id')
+        projects=c.fetchall()
+    items=[]
+    for r in rows:
+        items.append({'id':r['id'],'code':r['code'],'name':r['name'],'english_name':r['english_name'] or '',
+            'unit':r['unit'] or '','definition':r['definition'] or '',
+            'definition_status':r['definition_status'],
+            'is_key_metric':bool(r['is_key_metric']),'show_trend':bool(r['show_trend']),
+            'is_enabled':bool(r['is_enabled']),'row_version':r['row_version'],
+            'project_id':r['project_id'],'project_name':r['project_name'],
+            'category_id':r['category_id'],'category_name':r['category_name'],
+            'beidou_metric_code':r['beidou_metric_code'] or ''})
+    return {'items':items,'can_edit':can_edit,'can_create':can_create,
+            'categories':categories,
+            'projects':[{'id':p['id'],'name':p['name'],'is_enabled':bool(p['is_enabled'])} for p in projects]}
+
+@app.get(BASE+'/api/metrics/{metric_id}')
+def get_metric(metric_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'metric.view')
+    with database() as c:
+        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.definition,m.beidou_metric_code,
+                     m.category_id,m.project_id,m.is_enabled,m.row_version
+                     FROM metric m WHERE m.id=%s''',(metric_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'指标不存在')
+    return {'id':row['id'],'code':row['code'],'name':row['name'],'english_name':row['english_name'] or '',
+            'unit':row['unit'] or '','definition':row['definition'] or '',
+            'beidou_metric_code':row['beidou_metric_code'] or '','category_id':row['category_id'],
+            'project_id':row['project_id'],'is_enabled':bool(row['is_enabled']),'row_version':row['row_version']}
+
+def _validate_metric(c, data, metric_id=None):
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'指标名称不能为空')
+    c.execute('SELECT id,name,is_enabled FROM metric_category WHERE id=%s',(data.category_id,))
+    cat=c.fetchone()
+    if not cat:
+        raise HTTPException(400,'类型不存在')
+    if not cat['is_enabled']:
+        raise HTTPException(400,'该类型已停用，不能用于新指标')
+    c.execute('SELECT id FROM project WHERE id=%s',(data.project_id,))
+    if not c.fetchone():
+        raise HTTPException(400,'适用项目不存在')
+    c.execute('SELECT id FROM metric WHERE project_id=%s AND name_key=%s'+(' AND id<>%s' if metric_id else ''),
+              ((data.project_id,name)+(metric_id,)) if metric_id else (data.project_id,name))
+    if c.fetchone():
+        raise HTTPException(409,'该项目已存在同名指标，请修改指标名称或选择其他项目')
+    return name
+
+def _insert_metric_revision(c, metric_id, row, uid, changed):
+    c.execute('SELECT COALESCE(MAX(revision_no),0)+1 AS next FROM metric_revision WHERE metric_id=%s',(metric_id,))
+    revision_no=c.fetchone()['next']
+    c.execute('''INSERT INTO metric_revision(metric_id,revision_no,name,english_name,unit,value_kind,
+                 decimal_places,currency_code,scope_kind,definition,definition_status,retention_window_days,created_by)
+                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+              (metric_id,revision_no,changed['name'],changed['english_name'],changed['unit'],'DECIMAL',1,
+               None,'PROJECT',changed['definition'],changed['definition_status'],None,uid))
+    c.execute('UPDATE metric SET current_revision_id=%s WHERE id=%s',(c.lastrowid,metric_id))
+
+@app.post(BASE+'/api/metrics')
+def create_metric(data:MetricPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'metric.create')
+    mutation(request)
+    with database() as c:
+        name=_validate_metric(c,data)
+        # 原子分配编码：类型序号递增
+        c.execute('UPDATE metric_category SET last_sequence=last_sequence+1 WHERE id=%s',(data.category_id,))
+        c.execute('SELECT metric_code_prefix,last_sequence FROM metric_category WHERE id=%s',(data.category_id,))
+        cat=c.fetchone()
+        code=cat['metric_code_prefix']+str(cat['last_sequence']).zfill(4)
+        c.execute('SELECT COALESCE(MAX(display_order),0)+1 AS next FROM metric')
+        display_order=c.fetchone()['next']
+        english=data.english_name.strip() or None
+        unit=data.unit.strip() or None
+        definition=data.definition.strip() or None
+        definition_status='CONFIRMED' if definition else 'PENDING'
+        beidou=data.beidou_metric_code.strip() or None
+        c.execute('''INSERT INTO metric(project_id,category_id,code,name,name_key,english_name,unit,
+                     value_kind,decimal_places,currency_code,scope_kind,definition,definition_status,
+                     retention_window_days,current_revision_id,beidou_metric_code,is_key_metric,show_trend,
+                     display_order,is_enabled,created_by,updated_by)
+                     VALUES(%s,%s,%s,%s,%s,%s,%s,'DECIMAL',1,NULL,'PROJECT',%s,%s,NULL,NULL,%s,0,0,%s,1,%s,%s)''',
+                  (data.project_id,data.category_id,code,name,name,english,unit,definition,definition_status,
+                   beidou,display_order,user['id'],user['id']))
+        metric_id=c.lastrowid
+        _insert_metric_revision(c,metric_id,None,user['id'],
+            {'name':name,'english_name':english,'unit':unit,'definition':definition,'definition_status':definition_status})
+        audit(c,user['id'],'metric.create','metric',metric_id,None,
+              {'code':code,'name':name,'project_id':data.project_id,'category_id':data.category_id})
+    return {'ok':True,'id':metric_id,'code':code}
+
+@app.put(BASE+'/api/metrics/{metric_id}')
+def update_metric(metric_id:int,data:MetricPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'metric.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('''SELECT id,code,name,name_key,english_name,unit,definition,definition_status,
+                     category_id,project_id,row_version FROM metric WHERE id=%s FOR UPDATE''',(metric_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'指标不存在')
+        name=_validate_metric(c,data,metric_id)
+        if data.category_id!=row['category_id']:
+            c.execute('SELECT id,is_enabled FROM metric_category WHERE id=%s',(data.category_id,))
+            cat=c.fetchone()
+            if not cat:
+                raise HTTPException(400,'类型不存在')
+            if not cat['is_enabled']:
+                raise HTTPException(400,'该类型已停用，不能用于新指标')
+        english=data.english_name.strip() or None
+        unit=data.unit.strip() or None
+        definition=data.definition.strip() or None
+        definition_status='CONFIRMED' if definition else 'PENDING'
+        beidou=data.beidou_metric_code.strip() or None
+        before={'name':row['name'],'english_name':row['english_name'],'unit':row['unit'],
+                'definition':row['definition'],'category_id':row['category_id']}
+        c.execute('''UPDATE metric SET name=%s,name_key=%s,english_name=%s,unit=%s,definition=%s,
+                     definition_status=%s,beidou_metric_code=%s,category_id=%s,
+                     row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
+                  (name,name,english,unit,definition,definition_status,beidou,data.category_id,
+                   user['id'],metric_id))
+        revision_changed=(name!=row['name'] or english!=row['english_name'] or unit!=row['unit']
+                          or definition!=row['definition'] or definition_status!=row['definition_status'])
+        if revision_changed:
+            _insert_metric_revision(c,metric_id,row,user['id'],
+                {'name':name,'english_name':english,'unit':unit,'definition':definition,'definition_status':definition_status})
+        after={'name':name,'english_name':english,'unit':unit,'definition':definition,
+               'category_id':data.category_id,'beidou_metric_code':beidou}
+        audit(c,user['id'],'metric.edit','metric',metric_id,before,after)
+    return {'ok':True,'row_version':row['row_version']+1}
+
+@app.patch(BASE+'/api/metrics/{metric_id}')
+def toggle_metric(metric_id:int,data:MetricSwitch,request:Request):
+    user=actor(request)
+    check_permission(user,'metric.edit')
+    mutation(request)
+    fields=[f for f in ('is_enabled','is_key_metric','show_trend') if getattr(data,f) is not None]
+    if len(fields)!=1:
+        raise HTTPException(400,'一次只能切换一个开关')
+    field=fields[0]
+    value=bool(getattr(data,field))
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,is_key_metric,show_trend,row_version FROM metric WHERE id=%s FOR UPDATE',(metric_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'指标不存在')
+        if row['row_version']!=data.row_version:
+            raise HTTPException(409,'该指标已被其他操作更新，请刷新后重试')
+        if bool(row[field])==value:
+            return {'ok':True,'row_version':row['row_version']}
+        c.execute(f'UPDATE metric SET {field}=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (int(value),user['id'],metric_id))
+        if field=='is_enabled':
+            action='metric.enable' if value else 'metric.disable'
+        elif field=='is_key_metric':
+            action='metric.key'
+        else:
+            action='metric.trend'
+        audit(c,user['id'],action,'metric',metric_id,
+              {field:bool(row[field])},{field:value})
+    return {'ok':True,'row_version':row['row_version']+1}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
@@ -813,6 +1027,7 @@ def login_page():
 @app.get(BASE+'/settings/roles')
 @app.get(BASE+'/settings/projects')
 @app.get(BASE+'/settings/users')
+@app.get(BASE+'/settings/metrics')
 def protected_page(request:Request):
     try:
         user=actor(request)
@@ -824,6 +1039,8 @@ def protected_page(request:Request):
             check_permission(user,'project.view')
         elif request.url.path.endswith('/settings/users'):
             check_permission(user,'user.view')
+        elif request.url.path.endswith('/settings/metrics'):
+            check_permission(user,'metric.view')
     except HTTPException as e:
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)
