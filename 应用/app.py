@@ -1236,6 +1236,9 @@ def protected_page(request:Request):
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)
         raise
+    if request.url.path == BASE+'/':
+        check_permission(user,'home.view')
+        return FileResponse(ROOT/'static/home.html')
     return FileResponse(ROOT/'static/app.html')
 
 @app.get(BASE)
@@ -1249,3 +1252,70 @@ def health():
     return {'status':'ok'}
 
 app.mount(BASE+'/assets',StaticFiles(directory=ROOT/'static'),name='assets')
+
+# ---- 首页：只读真实数据，项目授权由同一个角色同时授予 ----
+def _home_projects(c, user):
+    if user['is_super']:
+        c.execute('SELECT id,code,name FROM project WHERE is_enabled=1 ORDER BY display_order,id')
+    else:
+        c.execute('''SELECT DISTINCT p.id,p.code,p.name,p.display_order FROM project p
+          JOIN sys_role_project sp ON sp.project_id=p.id
+          JOIN sys_role r ON r.id=sp.role_id AND r.is_enabled=1
+          JOIN sys_user_role ur ON ur.role_id=r.id
+          JOIN sys_role_permission rp ON rp.role_id=r.id
+          JOIN sys_permission pm ON pm.id=rp.permission_id AND pm.is_enabled=1
+          WHERE p.is_enabled=1 AND ur.user_id=%s AND pm.code='home.view'
+          ORDER BY p.display_order,p.id''',(user['id'],))
+    return c.fetchall()
+
+@app.get(BASE+'/api/home/projects')
+def home_projects(request:Request):
+    user=actor(request)
+    check_permission(user,'home.view')
+    with database() as c:
+        rows=_home_projects(c,user)
+    return {'projects':rows,'today':_business_today().isoformat()}
+
+@app.get(BASE+'/api/home/data')
+def home_data(request:Request, project_id:int, stat_date:str):
+    user=actor(request)
+    check_permission(user,'home.view')
+    try:
+        day=datetime.strptime(stat_date,'%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400,'统计日期格式无效')
+    if day>_business_today():
+        raise HTTPException(400,'不能查询未来统计日')
+    with database() as c:
+        if not any(p['id']==project_id for p in _home_projects(c,user)):
+            raise HTTPException(403,'无权查看此项目或项目已停用')
+        c.execute('''SELECT m.id,m.name,m.english_name,m.unit,m.definition,m.decimal_places,
+          m.is_key_metric,m.show_trend,cat.code AS category FROM metric m
+          JOIN metric_category cat ON cat.id=m.category_id AND cat.is_enabled=1
+          WHERE m.project_id=%s AND m.is_enabled=1 AND m.archived_at IS NULL
+          ORDER BY m.display_order,m.id''',(project_id,))
+        metrics=c.fetchall()
+        c.execute('''SELECT e.metric_id,e.feature_id,e.stat_date,e.value_number FROM metric_entry e
+          JOIN metric m ON m.id=e.metric_id AND m.project_id=e.project_id
+          WHERE e.project_id=%s AND e.stat_date BETWEEN %s AND %s AND m.is_enabled=1''',
+          (project_id,day-timedelta(days=13),day))
+        values=[{'metric_id':r['metric_id'],'feature_id':r['feature_id'],
+          'date':r['stat_date'].isoformat(),'value':_fmt_decimal(r['value_number']) if r['value_number'] is not None else None} for r in c.fetchall()]
+        c.execute('SELECT id,name FROM project_feature WHERE project_id=%s AND archived_at IS NULL ORDER BY display_order,id',(project_id,))
+        features=c.fetchall()
+        c.execute('SELECT id,name FROM funnel WHERE project_id=%s AND is_enabled=1 ORDER BY display_order,id',(project_id,))
+        funnels=c.fetchall()
+        c.execute('''SELECT s.funnel_id,s.step_name,s.position,b.metric_id,b.feature_id FROM funnel_step s
+          JOIN funnel f ON f.id=s.funnel_id AND f.project_id=s.project_id
+          JOIN metric_binding b ON b.id=s.binding_id AND b.project_id=s.project_id AND b.archived_at IS NULL
+          JOIN metric m ON m.id=b.metric_id AND m.project_id=s.project_id AND m.is_enabled=1
+          WHERE s.project_id=%s AND f.is_enabled=1 ORDER BY s.position,s.id''',(project_id,))
+        steps=c.fetchall()
+        # Keep steps referencing unavailable metrics visible as incomplete, never compress the funnel.
+        c.execute('SELECT s.funnel_id,COUNT(*) AS total FROM funnel_step s WHERE s.project_id=%s GROUP BY s.funnel_id',(project_id,))
+        counts={r['funnel_id']:r['total'] for r in c.fetchall()}
+        for f in funnels:
+            f['steps']=[s for s in steps if s['funnel_id']==f['id']]
+            f['complete_configuration']=len(f['steps'])==counts.get(f['id'],0)
+    return {'metrics':metrics,'values':values,'features':features,'funnels':funnels,
+            'retention_date_basis':'baseline','today':_business_today().isoformat()}

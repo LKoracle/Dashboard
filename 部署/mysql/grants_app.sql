@@ -54,3 +54,8 @@ GRANT SELECT, INSERT, UPDATE (`value_number`, `row_version`, `updated_at`, `upda
 GRANT DELETE ON dashboard.metric_entry TO 'dashboard_app'@'172.17.0.1';
 
 FLUSH PRIVILEGES;
+
+-- 首页：只读取已配置的漏斗、步骤及数据项；不授予配置写权限
+GRANT SELECT ON dashboard.funnel TO 'dashboard_app'@'172.17.0.1';
+GRANT SELECT ON dashboard.funnel_step TO 'dashboard_app'@'172.17.0.1';
+GRANT SELECT ON dashboard.metric_binding TO 'dashboard_app'@'172.17.0.1';
