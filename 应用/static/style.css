@@ -49,3 +49,8 @@
 .save-state{font-size:13px;color:#5b6b7f;margin-right:auto}
 .save-state.dirty{color:#b45309}
 .save-state.error{color:#dc2626}
+
+/* 指标配置：收紧类型列，将空间留给指标名称。 */
+.metric-config-table th:first-child{min-width:90px}
+.metric-config-table th:nth-child(2),.metric-config-table td:nth-child(2){padding-left:10px;padding-right:10px}
+.metric-config-table th:nth-child(3),.metric-config-table td:nth-child(3){min-width:200px}
