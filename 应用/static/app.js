@@ -111,7 +111,7 @@ function mtFieldBlock(m,fid,compact){const k=mtKey(m.id,fid);
  const inp=document.createElement('input');inp.id='mt-'+k;
  inp.inputmode=(m.unit==='人'||m.unit==='次')?'numeric':'decimal';
  inp.autocomplete='off';inp.placeholder=(m.unit==='人'||m.unit==='次')?'请输入人数或次数':'请输入数值';
- inp.value=mtDraft.has(k)?(mtDraft.get(k)||''):'';
+ inp.value=mtDraft.has(k)?(mtDraft.get(k)||''):(mtValues.get(k)||'');
  if(compact)inp.setAttribute('aria-label',m.name);
  box.append(inp);
  if(m.unit)box.append(el('span',m.unit,'maint-unit'));
