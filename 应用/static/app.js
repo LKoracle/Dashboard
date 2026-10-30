@@ -141,14 +141,14 @@ async function saveMaintain(){if(mtSaving||!mtCanEdit)return;
  const items=[],errs=new Map();mtValidateAll(items,errs);
  for(const [k,msg] of errs){const errEl=document.querySelector('#err-'+CSS.escape(k));const wrap=document.querySelector('#wrap-'+CSS.escape(k));if(errEl)errEl.textContent=msg;if(wrap)wrap.classList.add('invalid');}
  if(errs.size){notify('请先修正录入错误');return;}
- if(!items.length){mtStatus='saved';mtMsg='所有更改已保存';updateSavebar();return;}
+ if(!items.length){mtStatus='saved';mtMsg='所有更改已保存';updateSavebar();notify('暂无需要保存的更改');return;}
  const btn=document.querySelector('#saveMaintainBtn');mtSaving=true;mtStatus='saving';updateSavebar();if(btn)btn.disabled=true;
  let ok=false;
  try{await api('/maintain/data',{method:'POST',body:JSON.stringify({project_id:mtProject,stat_date:mtDate,items})});ok=true;}
  catch(ex){mtStatus='error';mtMsg=ex.message;notify(ex.message);}
  mtSaving=false;if(btn)btn.disabled=false;
  if(ok){for(const it of items){const k=mtKey(it.metric_id,it.feature_id);if(it.value===null)mtValues.delete(k);else mtValues.set(k,it.value);}
-  mtStatus='saved';mtMsg='已保存 '+items.length+' 项更改';}
+  mtStatus='saved';mtMsg='已保存 '+items.length+' 项更改';notify('数据保存成功');}
  updateSavebar();}
 function mtSection(cat){const metrics=mtMetricsOf(cat.id);
  const section=el('section',undefined,'card maint-section');section.dataset.cat=cat.code;
