@@ -786,7 +786,7 @@ def toggle_user(user_id:int,data:UserStatus,request:Request):
         audit(c,user['id'],'user.enable' if data.is_enabled else 'user.disable','sys_user',user_id,before,after)
     return {'ok':True,**after}
 
-@app.post(BASE+'/api/users/{user_id}/reset_password')
+@app.post(BASE+'/api/users/{user_id}/reset-password')
 def reset_user_password(user_id:int,request:Request):
     user=actor(request)
     check_permission(user,'user.reset_password')
