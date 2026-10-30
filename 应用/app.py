@@ -249,11 +249,20 @@ def list_roles(request:Request):
             projects.setdefault(r['role_id'],[]).append(r['name'])
         c.execute('''SELECT role_id,COUNT(*) AS cnt FROM sys_user_role GROUP BY role_id''')
         user_counts={r['role_id']:r['cnt'] for r in c.fetchall()}
+        c.execute('''SELECT DISTINCT rp.role_id, m.name, m.display_order, m.id
+                     FROM sys_role_permission rp
+                     JOIN sys_permission p ON p.id=rp.permission_id
+                     JOIN sys_menu m ON m.id=p.menu_id
+                     ORDER BY m.display_order, m.id''')
+        menus={}
+        for r in c.fetchall():
+            menus.setdefault(r['role_id'],[]).append(r['name'])
     items=[]
     for r in roles:
         items.append({'id':r['id'],'code':r['code'],'name':r['name'],'is_enabled':bool(r['is_enabled']),
             'row_version':r['row_version'],'permission_count':perm_counts.get(r['id'],0),
-            'projects':projects.get(r['id'],[]),'user_count':user_counts.get(r['id'],0)})
+            'projects':projects.get(r['id'],[]),'project_count':len(projects.get(r['id'],[])),
+            'user_count':user_counts.get(r['id'],0),'menus':menus.get(r['id'],[])})
     return {'items':items,'can_edit':can_edit}
 
 @app.get(BASE+'/api/roles/meta')
