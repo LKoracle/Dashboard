@@ -111,7 +111,7 @@ function mtFieldBlock(m,fid){const k=mtKey(m.id,fid);
  const lab=el('label',undefined,'maint-label');lab.htmlFor='mt-'+k;
  lab.append(el('span',m.name,'maint-name'));
  const code=el('small',m.code,'maint-code');lab.append(code);
- if(m.definition)lab.append(el('span','?','maint-help'),).lastChild.title=m.definition;
+ if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;lab.append(tip);}
  const box=el('div',undefined,'maint-input');
  const inp=document.createElement('input');inp.id='mt-'+k;
  inp.inputmode=(m.unit==='人'||m.unit==='次')?'numeric':'decimal';
