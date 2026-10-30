@@ -94,8 +94,7 @@ async function mtLoadData(){mtValues=new Map();if(!mtProject||!mtDate)return;
  catch(ex){notify(ex.message);}}
 function mtSwitchProject(id){if(!mtBoot||id===mtProject)return;mtStash.set(mtProject+'|'+mtDate,new Map(mtDraft));mtProject=id;mtDraft=new Map(mtStash.get(mtProject+'|'+mtDate)||[]);mtStatus='loading';render();mtLoadData().then(render);}
 function mtSwitchDate(d){if(!mtBoot||d===mtDate)return;mtStash.set(mtProject+'|'+mtDate,new Map(mtDraft));mtDate=d;mtDraft=new Map(mtStash.get(mtProject+'|'+mtDate)||[]);mtStatus='loading';render();mtLoadData().then(render);}
-function mtIsDirty(){const keys=new Set([...mtValues.keys(),...mtDraft.keys()]);
- for(const k of keys){const a=mtValues.has(k)?mtValues.get(k):'';const b=(mtDraft.has(k)?mtDraft.get(k):'')||'';if(a!==b)return true;}return false;}
+function mtIsDirty(){for(const [k,v] of mtDraft){const a=mtValues.has(k)?mtValues.get(k):'';if((v||'')!==a)return true;}return false;}
 function mtMetricsOf(catId){return mtBoot?mtBoot.metrics.filter(m=>m.project_id===mtProject&&m.category_id===catId):[];}
 function mtFeaturesOf(){return mtBoot?mtBoot.features.filter(f=>f.project_id===mtProject):[];}
 function updateSavebar(msg){const bar=document.querySelector('#savebar');if(!bar||bar.hidden)return;
