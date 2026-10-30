@@ -2,6 +2,7 @@
 -- 说明：本文件用于统一管理应用运行账号的数据库授权，便于新增功能/表时同步补权、以及重装时一键复现。
 -- 账号 host 为 Docker 网关 IP（pet-db 容器映射），当前为 172.17.0.1；若重建容器导致 host 变化需同步调整。
 -- 执行方式（在服务器上）：docker exec -i pet-db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' < grants_app.sql
+-- 含中文数据的 SQL 一律加 --default-character-set=utf8mb4
 
 -- 用户与权限（应用运行账号）
 -- 已存在账号时 GRANT 为幂等操作，可重复执行。

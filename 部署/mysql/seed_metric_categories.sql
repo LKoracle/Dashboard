@@ -1,6 +1,7 @@
 -- 指标类型初始化（metric_category）：7 个类型与原型编码前缀
 -- 幂等：依赖 code/name/metric_code_prefix 唯一键，重复执行不会产生重复行
--- 执行方式（在服务器上）：docker exec -i pet-db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot dashboard' < seed_metric_categories.sql
+-- 执行方式（在服务器上，务必带 --default-character-set=utf8mb4，否则中文会按 latin1 双重编码）：
+-- docker exec -i pet-db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot --default-character-set=utf8mb4 dashboard' < seed_metric_categories.sql
 
 INSERT IGNORE INTO metric_category(code,name,metric_code_prefix,last_sequence,display_order,is_enabled,created_by,updated_by) VALUES
  ('coverage','用户覆盖','YHFG',0,1,1,1,1),
