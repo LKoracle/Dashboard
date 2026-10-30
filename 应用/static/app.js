@@ -182,14 +182,22 @@ function renderMaintain(){content.replaceChildren();
  titleRow.append(el('h1','指标数据维护'),el('p','按项目、统计日期维护已启用指标的数值数据。','subtitle'));
  heading.append(titleRow);content.append(heading);
  const ctx=el('section',undefined,'card mt-context');
- const tabs=el('div',undefined,'mt-tabs');
- for(const p of mtBoot.projects){const b=el('button',p.name,'mt-tab'+(p.id===mtProject?' active':''));b.type='button';b.addEventListener('click',()=>mtSwitchProject(p.id));tabs.append(b);}
+ const tabs=el('div',undefined,'mt-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','切换项目');
+ for(const p of mtBoot.projects){const b=el('button',p.name,'mt-tab'+(p.id===mtProject?' active':''));b.type='button';b.setAttribute('aria-pressed',String(p.id===mtProject));b.addEventListener('click',()=>mtSwitchProject(p.id));tabs.append(b);}
  ctx.append(tabs);
  const dateRow=el('div',undefined,'mt-date-row');
- dateRow.append(el('span','统计日期','mt-date-label'));
- const dateInput=document.createElement('input');dateInput.type='date';dateInput.value=mtDate;dateInput.max=mtToday();
+ const dateLabel=el('label','统计日期','mt-date-label');
+ const stepper=el('div',undefined,'mt-stepper');
+ const prevBtn=el('button');prevBtn.type='button';prevBtn.setAttribute('aria-label','前一天');prevBtn.innerHTML=ic('<path d="m15 18-6-6 6-6"/>');
+ prevBtn.addEventListener('click',()=>mtSwitchDate(mtShiftDate(mtDate,-1)));
+ const dateInput=document.createElement('input');dateInput.type='date';dateInput.id='mtDateInput';dateInput.value=mtDate;dateInput.max=mtToday();
  dateInput.addEventListener('change',()=>{if(dateInput.value)mtSwitchDate(dateInput.value);});
- dateRow.append(dateInput);
+ const nextBtn=el('button');nextBtn.type='button';nextBtn.setAttribute('aria-label','后一天');nextBtn.innerHTML=ic('<path d="m9 18 6-6-6-6"/>');
+ nextBtn.disabled=mtDate>=mtToday();
+ nextBtn.addEventListener('click',()=>mtSwitchDate(mtShiftDate(mtDate,1)));
+ stepper.append(prevBtn,dateInput,nextBtn);
+ dateLabel.htmlFor='mtDateInput';
+ dateRow.append(dateLabel,stepper);
  if(mtIsDirty())dateRow.append(el('span','当前项目与日期下有未保存的更改，切换后将保留草稿。','mt-dirty-note'));
  ctx.append(dateRow);content.append(ctx);
  const grid=el('div',undefined,'maint-sections');
