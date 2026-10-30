@@ -1,0 +1,13 @@
+[Unit]
+Description=Dashboard HTTPS proxy
+After=network.target dashboard.service
+[Service]
+Type=forking
+PIDFile=/run/dashboard-nginx.pid
+ExecStartPre=/usr/sbin/nginx -t -c /opt/dashboard/nginx.conf
+ExecStart=/usr/sbin/nginx -c /opt/dashboard/nginx.conf
+ExecReload=/usr/sbin/nginx -s reload -c /opt/dashboard/nginx.conf
+ExecStop=/usr/sbin/nginx -s quit -c /opt/dashboard/nginx.conf
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

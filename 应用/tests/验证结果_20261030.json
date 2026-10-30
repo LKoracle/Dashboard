@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-30",
+  "environment": "https://129.226.194.82/dashboard",
+  "local_unit_tests_passed": 8,
+  "live_integration": {
+    "unauthenticated_blocked": true,
+    "login_secure_session": true,
+    "super_admin_verified": true,
+    "menu_tree_and_permissions": true,
+    "menu_change_persisted": true,
+    "optimistic_lock": true,
+    "csrf_enforced": true,
+    "menu_original_state_restored": true,
+    "logout_revokes_session": true
+  },
+  "browser_verified": [
+    "独立登录页",
+    "登录成功默认首页",
+    "菜单列表10条",
+    "启停确认弹窗与取消"
+  ],
+  "credentials_in_report": false,
+  "certificate_renewal_dry_run": true,
+  "audit_log_verified": true
+}

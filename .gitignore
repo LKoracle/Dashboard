@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 环境变量与敏感信息（切勿提交）
+.env
+*.env
+app.env
+*.secret
+*.pem
+id_rsa
+id_ed25519
+*.key
+
+# 编辑器与临时文件
+.~*
+
+# Excel 临时锁文件
+~$*.xlsx
+
+# 日志
+*.log

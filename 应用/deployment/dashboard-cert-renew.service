@@ -1,0 +1,6 @@
+[Unit]
+Description=Renew Dashboard IP TLS certificate
+After=network-online.target docker.service
+[Service]
+Type=oneshot
+ExecStart=/opt/dashboard/venv/bin/certbot renew --cert-name dashboard-ip --quiet --deploy-hook "/bin/systemctl reload dashboard-proxy"
