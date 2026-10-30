@@ -1070,7 +1070,13 @@ def maintain_data(request:Request, project_id:int, stat_date:str):
                      WHERE project_id=%s AND stat_date=%s''',(project_id,date))
         rows=c.fetchall()
     return {'items':[{'metric_id':r['metric_id'],'feature_id':r['feature_id'],
-                      'value':str(r['value_number'])} for r in rows]}
+                      'value':_fmt_decimal(r['value_number'])} for r in rows]}
+
+def _fmt_decimal(v):
+    s=format(v,'f')
+    if '.' in s:
+        s=s.rstrip('0').rstrip('.')
+    return s or '0'
 
 class MaintainItem(BaseModel):
     metric_id: int
@@ -1136,7 +1142,7 @@ def maintain_save(data:MaintainSave,request:Request):
         # 生效值 = 库中已有值 + 本次提交值，用于跨指标校验
         c.execute('''SELECT metric_id,feature_id,value_number FROM metric_entry
                      WHERE project_id=%s AND stat_date=%s''',(data.project_id,date))
-        effective={(r['metric_id'],r['feature_id'] or 0):str(r['value_number']) for r in c.fetchall()}
+        effective={(r['metric_id'],r['feature_id'] or 0):_fmt_decimal(r['value_number']) for r in c.fetchall()}
         for mid,fid,raw in prepared:
             key=(mid,fid or 0)
             if raw is None:
@@ -1181,7 +1187,7 @@ def maintain_save(data:MaintainSave,request:Request):
                 if row:
                     c.execute('DELETE FROM metric_entry WHERE id=%s',(row['id'],))
                     audit(c,user['id'],'maintain.clear','metric_entry',row['id'],
-                          {'metric':mname,'stat_date':data.stat_date,'value':str(row['value_number'])},None)
+                          {'metric':mname,'stat_date':data.stat_date,'value':_fmt_decimal(row['value_number'])},None)
                     saved+=1
             elif row is None:
                 c.execute('''INSERT INTO metric_entry(project_id,metric_id,feature_id,stat_date,value_number,created_by,updated_by)
@@ -1190,12 +1196,12 @@ def maintain_save(data:MaintainSave,request:Request):
                 audit(c,user['id'],'maintain.save','metric_entry',c.lastrowid,None,
                       {'metric':mname,'stat_date':data.stat_date,'value':raw})
                 saved+=1
-            elif str(row['value_number'])!=raw:
+            elif _fmt_decimal(row['value_number'])!=raw:
                 c.execute('''UPDATE metric_entry SET value_number=%s,row_version=row_version+1,
                              updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
                           (raw,user['id'],row['id']))
                 audit(c,user['id'],'maintain.save','metric_entry',row['id'],
-                      {'metric':mname,'stat_date':data.stat_date,'value':str(row['value_number'])},
+                      {'metric':mname,'stat_date':data.stat_date,'value':_fmt_decimal(row['value_number'])},
                       {'metric':mname,'stat_date':data.stat_date,'value':raw})
                 saved+=1
     return {'ok':True,'saved':saved}
