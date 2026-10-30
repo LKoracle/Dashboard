@@ -1,5 +1,5 @@
 """Dashboard: authenticated administration. All database timestamps are UTC."""
-import hashlib, hmac, json, os, secrets, threading, time
+import hashlib, hmac, json, os, re, secrets, threading, time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1018,11 +1018,194 @@ def toggle_metric(metric_id:int,data:MetricSwitch,request:Request):
               {field:bool(row[field])},{field:value})
     return {'ok':True,'row_version':row['row_version']+1}
 
+# ---- 数据维护 ----
+
+def _business_today():
+    # 业务时区 Asia/Shanghai
+    return (datetime.utcnow()+timedelta(hours=8)).date()
+
+def _maintain_categories(c):
+    c.execute('SELECT id,name,code FROM metric_category WHERE is_enabled=1 ORDER BY display_order,id')
+    return c.fetchall()
+
+@app.get(BASE+'/api/maintain/bootstrap')
+def maintain_bootstrap(request:Request):
+    user=actor(request)
+    check_permission(user,'maintain.view')
+    can_edit=True
+    try:
+        check_permission(user,'maintain.edit')
+    except HTTPException:
+        can_edit=False
+    with database() as c:
+        categories=_maintain_categories(c)
+        c.execute('''SELECT m.id,m.code,m.name,m.unit,m.definition,m.definition_status,m.decimal_places,
+                     m.project_id,m.category_id FROM metric m JOIN project p ON p.id=m.project_id
+                     WHERE m.is_enabled=1 AND p.is_enabled=1
+                     ORDER BY m.category_id,m.display_order,m.id''')
+        metrics=c.fetchall()
+        c.execute('SELECT id,name FROM project WHERE is_enabled=1 ORDER BY display_order,id')
+        projects=c.fetchall()
+        c.execute('SELECT id,project_id,name FROM project_feature WHERE archived_at IS NULL ORDER BY project_id,display_order,id')
+        features=c.fetchall()
+    return {'can_edit':can_edit,
+            'categories':[{'id':r['id'],'name':r['name'],'code':r['code']} for r in categories],
+            'projects':[{'id':r['id'],'name':r['name']} for r in projects],
+            'features':[{'id':r['id'],'project_id':r['project_id'],'name':r['name']} for r in features],
+            'metrics':[{'id':r['id'],'code':r['code'],'name':r['name'],'unit':r['unit'] or '',
+                        'definition':r['definition'] or '','definition_status':r['definition_status'],
+                        'decimal_places':r['decimal_places'],'project_id':r['project_id'],
+                        'category_id':r['category_id']} for r in metrics]}
+
+@app.get(BASE+'/api/maintain/data')
+def maintain_data(request:Request, project_id:int, stat_date:str):
+    user=actor(request)
+    check_permission(user,'maintain.view')
+    try:
+        date=datetime.strptime(stat_date,'%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400,'统计日期格式无效')
+    with database() as c:
+        c.execute('''SELECT metric_id,feature_id,value_number FROM metric_entry
+                     WHERE project_id=%s AND stat_date=%s''',(project_id,date))
+        rows=c.fetchall()
+    return {'items':[{'metric_id':r['metric_id'],'feature_id':r['feature_id'],
+                      'value':str(r['value_number'])} for r in rows]}
+
+class MaintainItem(BaseModel):
+    metric_id: int
+    feature_id: int | None = None
+    value: str | None = Field(default=None,max_length=32)
+
+class MaintainSave(BaseModel):
+    project_id: int
+    stat_date: str
+    items: list[MaintainItem] = Field(min_length=1,max_length=500)
+
+def _validate_value(raw, metric):
+    unit=metric['unit'] or ''
+    dp=metric['decimal_places'] if metric['decimal_places'] and 1<=metric['decimal_places']<=6 else 6
+    if unit in ('人','次'):
+        if not re.fullmatch(r'\d+',raw):
+            raise HTTPException(400,f'「{metric["name"]}」请输入非负整数')
+        return raw
+    if not re.fullmatch(r'\d+(\.\d{1,'+str(dp)+r'})?',raw):
+        raise HTTPException(400,f'「{metric["name"]}」请输入非负数，最多 {dp} 位小数')
+    if unit=='%' and float(raw)>100:
+        raise HTTPException(400,f'「{metric["name"]}」比例应在 0～100 之间')
+    return raw
+
+@app.post(BASE+'/api/maintain/data')
+def maintain_save(data:MaintainSave,request:Request):
+    user=actor(request)
+    check_permission(user,'maintain.edit')
+    mutation(request)
+    try:
+        date=datetime.strptime(data.stat_date,'%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400,'统计日期格式无效')
+    today=_business_today()
+    if date>today:
+        raise HTTPException(400,'不能保存未来统计日的数据')
+    with database() as c:
+        c.execute('''SELECT m.id,m.name,m.unit,m.decimal_places,m.category_id,cat.code AS cat_code
+                     FROM metric m JOIN metric_category cat ON cat.id=m.category_id
+                     WHERE m.project_id=%s AND m.is_enabled=1''',(data.project_id,))
+        metric_map={r['id']:r for r in c.fetchall()}
+        c.execute('SELECT id FROM project_feature WHERE project_id=%s AND archived_at IS NULL',(data.project_id,))
+        feature_ids={r['id'] for r in c.fetchall()}
+        has_retention=False
+        prepared=[]
+        for item in data.items:
+            mrow=metric_map.get(item.metric_id)
+            if not mrow:
+                raise HTTPException(400,'指标不存在或已停用，请刷新后重试')
+            if mrow['cat_code']=='retention':
+                has_retention=True
+            if item.feature_id is not None:
+                if item.feature_id not in feature_ids:
+                    raise HTTPException(400,'所选功能不存在或已归档')
+                if mrow['cat_code']!='feature':
+                    raise HTTPException(400,f'「{mrow["name"]}」不支持按功能录入')
+            elif mrow['cat_code']=='feature':
+                raise HTTPException(400,f'「{mrow["name"]}」为功能使用指标，需按功能逐行录入')
+            raw=(item.value or '').strip()
+            prepared.append((item.metric_id,item.feature_id,_validate_value(raw,mrow) if raw else None))
+        if has_retention and date>today-timedelta(days=7):
+            raise HTTPException(400,'7日留存仅可保存第 7 天观察日已结束的数据（统计日期不晚于 7 天前）')
+        # 生效值 = 库中已有值 + 本次提交值，用于跨指标校验
+        c.execute('''SELECT metric_id,feature_id,value_number FROM metric_entry
+                     WHERE project_id=%s AND stat_date=%s''',(data.project_id,date))
+        effective={(r['metric_id'],r['feature_id'] or 0):str(r['value_number']) for r in c.fetchall()}
+        for mid,fid,raw in prepared:
+            key=(mid,fid or 0)
+            if raw is None:
+                effective.pop(key,None)
+            else:
+                effective[key]=raw
+        by_name={}
+        for m in metric_map.values():
+            by_name.setdefault(m['cat_code'],{})[m['name']]=m['id']
+        def val(code,name):
+            mid=by_name.get(code,{}).get(name)
+            return effective.get((mid,0)) if mid is not None else None
+        cov_cum,cov_en=val('coverage','累计使用用户数'),val('coverage','开通用户数')
+        if cov_cum and cov_en and float(cov_cum)>float(cov_en):
+            raise HTTPException(400,'累计使用用户数不能超过开通用户数')
+        ttft,full=val('performance','平均首字响应时长'),val('performance','平均完整响应时长')
+        if ttft and full and float(ttft)>float(full):
+            raise HTTPException(400,'平均完整响应时长不能小于平均首字响应时长')
+        sessions,avg=val('depth','有效会话数'),val('depth','每次会话平均时长')
+        if sessions is not None and float(sessions)==0 and avg is not None:
+            raise HTTPException(400,'有效会话数为 0 时，每次会话平均时长应留空')
+        # 功能使用：同一功能 日使用人数 <= 累计使用人数
+        feature_day={}
+        for (mid,fkey),v in effective.items():
+            m=metric_map.get(mid)
+            if m and m['cat_code']=='feature' and m['name']=='功能日使用人数':
+                feature_day[fkey]=v
+        for (mid,fkey),v in effective.items():
+            m=metric_map.get(mid)
+            if m and m['cat_code']=='feature' and m['name']=='功能累计使用人数':
+                day=feature_day.get(fkey)
+                if day is not None and float(day)>float(v):
+                    raise HTTPException(400,'功能日使用人数不能超过其累计使用人数')
+        saved=0
+        for mid,fid,raw in prepared:
+            c.execute('''SELECT id,value_number FROM metric_entry
+                         WHERE project_id=%s AND metric_id=%s AND stat_date=%s AND feature_id<=>%s''',
+                      (data.project_id,mid,date,fid))
+            row=c.fetchone()
+            mname=metric_map[mid]['name']
+            if raw is None:
+                if row:
+                    c.execute('DELETE FROM metric_entry WHERE id=%s',(row['id'],))
+                    audit(c,user['id'],'maintain.clear','metric_entry',row['id'],
+                          {'metric':mname,'stat_date':data.stat_date,'value':str(row['value_number'])},None)
+                    saved+=1
+            elif row is None:
+                c.execute('''INSERT INTO metric_entry(project_id,metric_id,feature_id,stat_date,value_number,created_by,updated_by)
+                             VALUES(%s,%s,%s,%s,%s,%s,%s)''',
+                          (data.project_id,mid,fid,date,raw,user['id'],user['id']))
+                audit(c,user['id'],'maintain.save','metric_entry',c.lastrowid,None,
+                      {'metric':mname,'stat_date':data.stat_date,'value':raw})
+                saved+=1
+            elif str(row['value_number'])!=raw:
+                c.execute('''UPDATE metric_entry SET value_number=%s,row_version=row_version+1,
+                             updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
+                          (raw,user['id'],row['id']))
+                audit(c,user['id'],'maintain.save','metric_entry',row['id'],
+                      {'metric':mname,'stat_date':data.stat_date,'value':str(row['value_number'])},
+                      {'metric':mname,'stat_date':data.stat_date,'value':raw})
+                saved+=1
+    return {'ok':True,'saved':saved}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
 
 @app.get(BASE+'/')
+@app.get(BASE+'/maintain')
 @app.get(BASE+'/settings/menus')
 @app.get(BASE+'/settings/roles')
 @app.get(BASE+'/settings/projects')
@@ -1031,7 +1214,9 @@ def login_page():
 def protected_page(request:Request):
     try:
         user=actor(request)
-        if request.url.path.endswith('/settings/menus'):
+        if request.url.path.endswith('/maintain'):
+            check_permission(user,'maintain.view')
+        elif request.url.path.endswith('/settings/menus'):
             check_permission(user,'menu.view')
         elif request.url.path.endswith('/settings/roles'):
             check_permission(user,'role.view')

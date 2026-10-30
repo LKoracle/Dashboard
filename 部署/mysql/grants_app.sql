@@ -49,4 +49,8 @@ GRANT SELECT, UPDATE (`last_sequence`) ON dashboard.metric_category TO 'dashboar
 -- 指标口径版本：查询 + 插入（口径修订历史）
 GRANT SELECT, INSERT ON dashboard.metric_revision TO 'dashboard_app'@'172.17.0.1';
 
+-- 指标手工录入数据：数据维护功能（查询/保存/清空）
+GRANT SELECT, INSERT, UPDATE (`value_number`, `row_version`, `updated_at`, `updated_by`) ON dashboard.metric_entry TO 'dashboard_app'@'172.17.0.1';
+GRANT DELETE ON dashboard.metric_entry TO 'dashboard_app'@'172.17.0.1';
+
 FLUSH PRIVILEGES;
