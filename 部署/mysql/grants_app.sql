@@ -33,7 +33,10 @@ GRANT SELECT ON dashboard.sys_user_role TO 'dashboard_app'@'172.17.0.1';
 -- 用户：查询 + 更新 last_login_at（登录记录）
 GRANT SELECT, UPDATE (`last_login_at`) ON dashboard.sys_user TO 'dashboard_app'@'172.17.0.1';
 
--- 项目：仅查询（角色项目范围下拉、列表 JOIN 项目名）
-GRANT SELECT ON dashboard.project TO 'dashboard_app'@'172.17.0.1';
+-- 项目：查询 + 增删改（项目管理功能：新增/编辑/启停/排序）
+GRANT SELECT, INSERT, UPDATE, DELETE ON dashboard.project TO 'dashboard_app'@'172.17.0.1';
+
+-- 项目功能清单：查询 + 增删改（项目管理功能清单维护）
+GRANT SELECT, INSERT, UPDATE, DELETE ON dashboard.project_feature TO 'dashboard_app'@'172.17.0.1';
 
 FLUSH PRIVILEGES;

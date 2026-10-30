@@ -440,6 +440,171 @@ def delete_role(role_id:int,request:Request):
         audit(c,user['id'],'role.delete','sys_role',role_id,{'name':row['name']},None)
     return {'ok':True}
 
+# ---- 项目管理 ----
+
+class ProjectPayload(BaseModel):
+    name: str = Field(min_length=1,max_length=100)
+    is_enabled: bool = True
+    features: list[str] = Field(default_factory=list)
+
+class ProjectStatus(BaseModel):
+    is_enabled: StrictBool
+    row_version: int = Field(ge=1)
+
+class ProjectMove(BaseModel):
+    direction: str = Field(pattern='^(up|down)$')
+    row_version: int = Field(ge=1)
+
+def _project_feature_names(c, project_id):
+    c.execute('SELECT name FROM project_feature WHERE project_id=%s ORDER BY display_order,id',(project_id,))
+    return [r['name'] for r in c.fetchall()]
+
+@app.get(BASE+'/api/projects')
+def list_projects(request:Request):
+    user=actor(request)
+    check_permission(user,'project.view')
+    can_edit=True
+    try:
+        check_permission(user,'project.edit')
+    except HTTPException:
+        can_edit=False
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,display_order,row_version FROM project ORDER BY display_order,id')
+        rows=c.fetchall()
+    items=[]
+    for r in rows:
+        with database() as c:
+            features=_project_feature_names(c,r['id'])
+        items.append({'id':r['id'],'code':r['code'],'name':r['name'],'is_enabled':bool(r['is_enabled']),
+                      'display_order':r['display_order'],'row_version':r['row_version'],'features':features})
+    return {'items':items,'can_edit':can_edit}
+
+@app.get(BASE+'/api/projects/{project_id}')
+def get_project(project_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'project.view')
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,display_order,row_version FROM project WHERE id=%s',(project_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'项目不存在')
+        features=_project_feature_names(c,project_id)
+    return {'id':row['id'],'code':row['code'],'name':row['name'],'is_enabled':bool(row['is_enabled']),
+            'display_order':row['display_order'],'row_version':row['row_version'],'features':features}
+
+def _write_features(c, project_id, features, uid):
+    names=[]
+    seen=set()
+    for f in features:
+        name=str(f).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    c.execute('DELETE FROM project_feature WHERE project_id=%s',(project_id,))
+    for i,name in enumerate(names,start=1):
+        code='feat_'+secrets.token_hex(4)
+        c.execute('''INSERT INTO project_feature(project_id,code,name,display_order,created_by,updated_by)
+                     VALUES(%s,%s,%s,%s,%s,%s)''',(project_id,code,name,i,uid,uid))
+    return names
+
+@app.post(BASE+'/api/projects')
+def create_project(data:ProjectPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'project.create')
+    mutation(request)
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'项目名称不能为空')
+    with database() as c:
+        c.execute('SELECT id FROM project WHERE name=%s',(name,))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同名项目')
+        c.execute('SELECT COALESCE(MAX(display_order),0)+1 FROM project')
+        display_order=c.fetchone()['COALESCE(MAX(display_order),0)+1']
+        code='proj_'+secrets.token_hex(4)
+        c.execute('''INSERT INTO project(code,name,is_enabled,display_order,created_by,updated_by)
+                     VALUES(%s,%s,%s,%s,%s,%s)''',(code,name,int(bool(data.is_enabled)),display_order,user['id'],user['id']))
+        project_id=c.lastrowid
+        features=_write_features(c,project_id,data.features,user['id'])
+        audit(c,user['id'],'project.create','project',project_id,None,
+              {'name':name,'is_enabled':bool(data.is_enabled),'features':features})
+    return {'ok':True,'id':project_id}
+
+@app.put(BASE+'/api/projects/{project_id}')
+def update_project(project_id:int,data:ProjectPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'project.edit')
+    mutation(request)
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'项目名称不能为空')
+    with database() as c:
+        c.execute('SELECT id,code,name,is_enabled,row_version FROM project WHERE id=%s FOR UPDATE',(project_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'项目不存在')
+        c.execute('SELECT id FROM project WHERE name=%s AND id<>%s',(name,project_id))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同名项目')
+        before={'name':row['name'],'is_enabled':bool(row['is_enabled'])}
+        c.execute('''UPDATE project SET name=%s,is_enabled=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6)
+                     WHERE id=%s''',(name,int(bool(data.is_enabled)),user['id'],project_id))
+        features=_write_features(c,project_id,data.features,user['id'])
+        after={'name':name,'is_enabled':bool(data.is_enabled),'features':features}
+        audit(c,user['id'],'project.edit','project',project_id,before,after)
+    return {'ok':True,'row_version':row['row_version']+1}
+
+@app.patch(BASE+'/api/projects/{project_id}')
+def toggle_project(project_id:int,data:ProjectStatus,request:Request):
+    user=actor(request)
+    check_permission(user,'project.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,code,is_enabled,row_version FROM project WHERE id=%s FOR UPDATE',(project_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'项目不存在')
+        if row['row_version']!=data.row_version:
+            raise HTTPException(409,'此项目已被其他操作更新，请刷新后重试')
+        if bool(row['is_enabled'])==data.is_enabled:
+            return {'ok':True,'row_version':row['row_version']}
+        before={'is_enabled':bool(row['is_enabled']),'row_version':row['row_version']}
+        c.execute('''UPDATE project SET is_enabled=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6)
+                     WHERE id=%s''',(int(data.is_enabled),user['id'],project_id))
+        after={'is_enabled':data.is_enabled,'row_version':row['row_version']+1}
+        audit(c,user['id'],'project.enable' if data.is_enabled else 'project.disable','project',project_id,before,after)
+    return {'ok':True,**after}
+
+@app.patch(BASE+'/api/projects/{project_id}/move')
+def move_project(project_id:int,data:ProjectMove,request:Request):
+    user=actor(request)
+    check_permission(user,'project.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,code,display_order,row_version FROM project WHERE id=%s FOR UPDATE',(project_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'项目不存在')
+        if row['row_version']!=data.row_version:
+            raise HTTPException(409,'此项目已被其他操作更新，请刷新后重试')
+        c.execute('SELECT id,display_order FROM project ORDER BY display_order,id')
+        rows=c.fetchall()
+        idx=next((i for i,r in enumerate(rows) if r['id']==project_id),None)
+        if idx is None:
+            raise HTTPException(404,'项目不存在')
+        target=idx-1 if data.direction=='up' else idx+1
+        if target<0 or target>=len(rows):
+            return {'ok':True,'row_version':row['row_version']}
+        other=rows[target]
+        a,b=rows[idx]['display_order'],other['display_order']
+        c.execute('UPDATE project SET display_order=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (b,user['id'],project_id))
+        c.execute('UPDATE project SET display_order=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (a,user['id'],other['id']))
+        audit(c,user['id'],'project.move','project',project_id,{'from':a,'to':b},{'from':b,'to':a})
+    return {'ok':True,'row_version':row['row_version']+1}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
@@ -447,6 +612,7 @@ def login_page():
 @app.get(BASE+'/')
 @app.get(BASE+'/settings/menus')
 @app.get(BASE+'/settings/roles')
+@app.get(BASE+'/settings/projects')
 def protected_page(request:Request):
     try:
         user=actor(request)
@@ -454,6 +620,8 @@ def protected_page(request:Request):
             check_permission(user,'menu.view')
         elif request.url.path.endswith('/settings/roles'):
             check_permission(user,'role.view')
+        elif request.url.path.endswith('/settings/projects'):
+            check_permission(user,'project.view')
     except HTTPException as e:
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)
