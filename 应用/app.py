@@ -607,7 +607,7 @@ def move_project(project_id:int,data:ProjectMove,request:Request):
 
 # ---- 用户管理 ----
 
-INITIAL_PASSWORD = os.getenv('INITIAL_PASSWORD', 'Init@2026')
+INITIAL_PASSWORD = os.getenv('INITIAL_PASSWORD', '123456')
 
 class UserPayload(BaseModel):
     display_name: str = Field(min_length=1,max_length=100)
