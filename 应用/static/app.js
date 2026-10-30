@@ -106,22 +106,25 @@ function updateSavebar(msg){const bar=document.querySelector('#savebar');if(!bar
  let text=msg;
  if(!text){if(mtStatus==='loading')text='正在加载数据…';else if(mtSaving)text='正在保存…';else if(mtStatus==='error')text=mtMsg;else if(mtIsDirty())text='有未保存的更改';else if(mtStatus==='saved')text=mtMsg||'所有更改已保存';else text='暂无更改';}
  state.textContent=text;state.className=mtStatus==='error'?'save-state error':(mtIsDirty()?'save-state dirty':'save-state');}
-function mtFieldBlock(m,fid){const k=mtKey(m.id,fid);
+function mtFieldBlock(m,fid,compact){const k=mtKey(m.id,fid);
  const wrap=el('div',undefined,'maint-field');wrap.id='wrap-'+k;
- const lab=el('label',undefined,'maint-label');lab.htmlFor='mt-'+k;
- lab.append(el('span',m.name,'maint-name'));
- const code=el('small',m.code,'maint-code');lab.append(code);
- if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;lab.append(tip);}
  const box=el('div',undefined,'maint-input');
  const inp=document.createElement('input');inp.id='mt-'+k;
  inp.inputmode=(m.unit==='人'||m.unit==='次')?'numeric':'decimal';
  inp.autocomplete='off';inp.placeholder=(m.unit==='人'||m.unit==='次')?'请输入人数或次数':'请输入数值';
  inp.value=mtDraft.has(k)?(mtDraft.get(k)||''):'';
+ if(compact)inp.setAttribute('aria-label',m.name);
  box.append(inp);
  if(m.unit)box.append(el('span',m.unit,'maint-unit'));
  const err=el('div','','maint-error');err.id='err-'+k;
  inp.addEventListener('input',()=>{mtDraft.set(k,inp.value.trim());err.textContent='';wrap.classList.remove('invalid');mtStatus='dirty';updateSavebar();});
- wrap.append(lab,box,err);return wrap;}
+ wrap.append(box,err);
+ if(compact)return wrap;
+ const lab=el('label',undefined,'maint-label');lab.htmlFor='mt-'+k;
+ lab.append(el('span',m.name,'maint-name'));
+ lab.append(el('small',m.code,'maint-code'));
+ if(m.definition){const tip=el('span','?','maint-help');tip.title=m.definition;lab.append(tip);}
+ wrap.prepend(lab);return wrap;}
 function mtValidateAll(items,errs){
  for(const [k,v] of mtDraft){const parts=k.split('_');const mid=Number(parts[0]);const fid=parts[1]==='0'?null:Number(parts[1]);
   const m=mtBoot.metrics.find(x=>x.id===mid);if(!m)continue;
@@ -164,7 +167,7 @@ function mtSection(cat){const metrics=mtMetricsOf(cat.id);
   thead.append(trh);table.append(thead);
   const tbody=el('tbody');
   for(const f of features){const tr=el('tr');tr.append(el('td',f.name,'maint-feature-name'));
-   for(const m of metrics){const td=el('td');td.append(mtFieldBlock(m,f.id));tr.append(td);}
+   for(const m of metrics){const td=el('td');td.append(mtFieldBlock(m,f.id,true));tr.append(td);}
    tbody.append(tr);}
   table.append(tbody);wrap.append(table);section.append(wrap);
   section.append(el('p','日使用人数占比以当日活跃用户数为分母，累计使用人数占比以项目累计使用用户数为分母；各功能分别去重，占比之和可能超过 100%。','maint-foot'));
