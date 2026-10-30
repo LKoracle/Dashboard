@@ -27,11 +27,11 @@ GRANT SELECT, INSERT, DELETE ON dashboard.sys_role_permission TO 'dashboard_app'
 -- 角色-项目关联：查询 + 增删（角色项目范围）
 GRANT SELECT, INSERT, DELETE ON dashboard.sys_role_project TO 'dashboard_app'@'172.17.0.1';
 
--- 用户-角色关联：仅查询（角色列表统计用户数、权限校验）
-GRANT SELECT ON dashboard.sys_user_role TO 'dashboard_app'@'172.17.0.1';
+-- 用户-角色关联：查询 + 增删（用户管理：分配/调整角色）
+GRANT SELECT, INSERT, DELETE ON dashboard.sys_user_role TO 'dashboard_app'@'172.17.0.1';
 
--- 用户：查询 + 更新 last_login_at（登录记录）
-GRANT SELECT, UPDATE (`last_login_at`) ON dashboard.sys_user TO 'dashboard_app'@'172.17.0.1';
+-- 用户：查询 + 插入 + 更新（登录记录 + 用户管理：新增/编辑/启停/重置密码）
+GRANT SELECT, INSERT, UPDATE (`last_login_at`, `display_name`, `login_id`, `password_hash`, `is_enabled`, `must_change_password`, `password_changed_at`, `auth_version`, `row_version`, `updated_at`, `updated_by`) ON dashboard.sys_user TO 'dashboard_app'@'172.17.0.1';
 
 -- 项目：查询 + 增删改（项目管理功能：新增/编辑/启停/排序）
 GRANT SELECT, INSERT, UPDATE, DELETE ON dashboard.project TO 'dashboard_app'@'172.17.0.1';

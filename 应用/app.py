@@ -605,6 +605,205 @@ def move_project(project_id:int,data:ProjectMove,request:Request):
         audit(c,user['id'],'project.move','project',project_id,{'from':a,'to':b},{'from':b,'to':a})
     return {'ok':True,'row_version':row['row_version']+1}
 
+# ---- 用户管理 ----
+
+INITIAL_PASSWORD = os.getenv('INITIAL_PASSWORD', 'Init@2026')
+
+class UserPayload(BaseModel):
+    display_name: str = Field(min_length=1,max_length=100)
+    login_id: str = Field(min_length=1,max_length=100)
+    role_ids: list[int] = Field(default_factory=list)
+    is_enabled: bool = True
+
+class UserStatus(BaseModel):
+    is_enabled: StrictBool
+    row_version: int = Field(ge=1)
+
+def _user_role_ids(c, user_id):
+    c.execute('''SELECT ur.role_id FROM sys_user_role ur
+                 JOIN sys_role r ON r.id=ur.role_id
+                 WHERE ur.user_id=%s ORDER BY r.id''',(user_id,))
+    return [r['role_id'] for r in c.fetchall()]
+
+def _user_is_super(c, user_id):
+    c.execute('''SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id
+                 WHERE ur.user_id=%s AND r.code='super_admin' LIMIT 1''',(user_id,))
+    return c.fetchone() is not None
+
+@app.get(BASE+'/api/users')
+def list_users(request:Request):
+    user=actor(request)
+    check_permission(user,'user.view')
+    can_edit=True
+    try:
+        check_permission(user,'user.edit')
+    except HTTPException:
+        can_edit=False
+    can_create=True
+    try:
+        check_permission(user,'user.create')
+    except HTTPException:
+        can_create=False
+    can_reset=True
+    try:
+        check_permission(user,'user.reset_password')
+    except HTTPException:
+        can_reset=False
+    with database() as c:
+        c.execute('SELECT id,login_id,display_name,is_enabled,row_version FROM sys_user ORDER BY id')
+        rows=c.fetchall()
+        c.execute('SELECT id,name,is_enabled FROM sys_role ORDER BY id')
+        role_options=c.fetchall()
+        c.execute('''SELECT ur.user_id, ur.role_id, r.name FROM sys_user_role ur
+                     JOIN sys_role r ON r.id=ur.role_id ORDER BY r.id''')
+        user_roles={}
+        for r in c.fetchall():
+            user_roles.setdefault(r['user_id'],[]).append({'id':r['role_id'],'name':r['name']})
+    items=[]
+    for r in rows:
+        roles=user_roles.get(r['id'],[])
+        items.append({'id':r['id'],'login_id':r['login_id'],'display_name':r['display_name'],
+            'is_enabled':bool(r['is_enabled']),'row_version':r['row_version'],
+            'roles':roles,'role_ids':[x['id'] for x in roles]})
+    return {'items':items,'roles':[{'id':r['id'],'name':r['name'],'is_enabled':bool(r['is_enabled'])} for r in role_options],
+            'can_edit':can_edit,'can_create':can_create,'can_reset':can_reset}
+
+@app.get(BASE+'/api/users/{user_id}')
+def get_user(user_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'user.view')
+    with database() as c:
+        c.execute('SELECT id,login_id,display_name,is_enabled,row_version FROM sys_user WHERE id=%s',(user_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'用户不存在')
+        role_ids=_user_role_ids(c,user_id)
+    return {'id':row['id'],'login_id':row['login_id'],'display_name':row['display_name'],
+            'is_enabled':bool(row['is_enabled']),'row_version':row['row_version'],'role_ids':role_ids}
+
+@app.post(BASE+'/api/users')
+def create_user(data:UserPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'user.create')
+    mutation(request)
+    login_id=data.login_id.strip()
+    display_name=data.display_name.strip()
+    if not login_id:
+        raise HTTPException(400,'用户ID不能为空')
+    if not display_name:
+        raise HTTPException(400,'用户名称不能为空')
+    with database() as c:
+        c.execute('SELECT id FROM sys_user WHERE login_id=%s',(login_id,))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同用户ID')
+        if data.role_ids:
+            fmt=','.join(['%s']*len(data.role_ids))
+            c.execute(f'SELECT id FROM sys_role WHERE id IN ({fmt})',tuple(set(data.role_ids)))
+            valid={r['id'] for r in c.fetchall()}
+            if len(valid)!=len(set(data.role_ids)):
+                raise HTTPException(400,'包含无效的角色')
+        c.execute('''INSERT INTO sys_user(login_id,display_name,password_hash,is_enabled,must_change_password,password_changed_at,created_by,updated_by)
+                     VALUES(%s,%s,%s,%s,0,UTC_TIMESTAMP(6),%s,%s)''',
+                  (login_id,display_name,ph.hash(INITIAL_PASSWORD),int(bool(data.is_enabled)),user['id'],user['id']))
+        uid=c.lastrowid
+        for rid in set(data.role_ids):
+            c.execute('INSERT INTO sys_user_role(user_id,role_id,created_by) VALUES(%s,%s,%s)',(uid,rid,user['id']))
+        audit(c,user['id'],'user.create','sys_user',uid,None,
+              {'login_id':login_id,'display_name':display_name,'is_enabled':bool(data.is_enabled),
+               'role_ids':sorted(set(data.role_ids))})
+    return {'ok':True,'id':uid}
+
+@app.put(BASE+'/api/users/{user_id}')
+def update_user(user_id:int,data:UserPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'user.edit')
+    mutation(request)
+    login_id=data.login_id.strip()
+    display_name=data.display_name.strip()
+    if not login_id:
+        raise HTTPException(400,'用户ID不能为空')
+    if not display_name:
+        raise HTTPException(400,'用户名称不能为空')
+    with database() as c:
+        c.execute('SELECT id,login_id,display_name,is_enabled,auth_version,row_version FROM sys_user WHERE id=%s FOR UPDATE',(user_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'用户不存在')
+        c.execute('SELECT id FROM sys_user WHERE login_id=%s AND id<>%s',(login_id,user_id))
+        if c.fetchone():
+            raise HTTPException(409,'已存在同用户ID')
+        if data.role_ids:
+            fmt=','.join(['%s']*len(data.role_ids))
+            c.execute(f'SELECT id FROM sys_role WHERE id IN ({fmt})',tuple(set(data.role_ids)))
+            valid={r['id'] for r in c.fetchall()}
+            if len(valid)!=len(set(data.role_ids)):
+                raise HTTPException(400,'包含无效的角色')
+        if not data.is_enabled and user_id==user['id']:
+            raise HTTPException(403,'不能停用当前登录账号')
+        before={'login_id':row['login_id'],'display_name':row['display_name'],
+                'is_enabled':bool(row['is_enabled']),'role_ids':_user_role_ids(c,user_id)}
+        bump_auth=int(not data.is_enabled and bool(row['is_enabled']))
+        c.execute('''UPDATE sys_user SET login_id=%s,display_name=%s,is_enabled=%s,
+                     auth_version=auth_version+%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6)
+                     WHERE id=%s''',(login_id,display_name,int(bool(data.is_enabled)),bump_auth,user['id'],user_id))
+        c.execute('DELETE FROM sys_user_role WHERE user_id=%s',(user_id,))
+        for rid in set(data.role_ids):
+            c.execute('INSERT INTO sys_user_role(user_id,role_id,created_by) VALUES(%s,%s,%s)',(user_id,rid,user['id']))
+        after={'login_id':login_id,'display_name':display_name,'is_enabled':bool(data.is_enabled),
+               'role_ids':sorted(set(data.role_ids))}
+        audit(c,user['id'],'user.edit','sys_user',user_id,before,after)
+    return {'ok':True,'row_version':row['row_version']+1}
+
+@app.patch(BASE+'/api/users/{user_id}')
+def toggle_user(user_id:int,data:UserStatus,request:Request):
+    user=actor(request)
+    check_permission(user,'user.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,login_id,is_enabled,auth_version,row_version FROM sys_user WHERE id=%s FOR UPDATE',(user_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'用户不存在')
+        if not data.is_enabled and user_id==user['id']:
+            raise HTTPException(403,'不能停用当前登录账号')
+        if not data.is_enabled and _user_is_super(c,user_id):
+            c.execute('''SELECT COUNT(*) AS cnt FROM sys_user u
+                         JOIN sys_user_role ur ON ur.user_id=u.id
+                         JOIN sys_role r ON r.id=ur.role_id AND r.code='super_admin'
+                         WHERE u.is_enabled=1''')
+            if c.fetchone()['cnt']<=1:
+                raise HTTPException(403,'不能停用唯一可用的超级管理员')
+        if row['row_version']!=data.row_version:
+            raise HTTPException(409,'该用户已被其他操作更新，请刷新后重试')
+        if bool(row['is_enabled'])==data.is_enabled:
+            return {'ok':True,'row_version':row['row_version']}
+        before={'is_enabled':bool(row['is_enabled']),'row_version':row['row_version']}
+        bump_auth=0 if data.is_enabled else 1
+        c.execute('''UPDATE sys_user SET is_enabled=%s,auth_version=auth_version+%s,
+                     row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
+                  (int(data.is_enabled),bump_auth,user['id'],user_id))
+        after={'is_enabled':data.is_enabled,'row_version':row['row_version']+1}
+        audit(c,user['id'],'user.enable' if data.is_enabled else 'user.disable','sys_user',user_id,before,after)
+    return {'ok':True,**after}
+
+@app.post(BASE+'/api/users/{user_id}/reset_password')
+def reset_user_password(user_id:int,request:Request):
+    user=actor(request)
+    check_permission(user,'user.reset_password')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,login_id,display_name FROM sys_user WHERE id=%s FOR UPDATE',(user_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'用户不存在')
+        c.execute('''UPDATE sys_user SET password_hash=%s,must_change_password=0,
+                     password_changed_at=UTC_TIMESTAMP(6),auth_version=auth_version+1,
+                     row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
+                  (ph.hash(INITIAL_PASSWORD),user['id'],user_id))
+        audit(c,user['id'],'user.reset_password','sys_user',user_id,
+              {'login_id':row['login_id']},{'password':'系统初始密码'})
+    return {'ok':True}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
@@ -613,6 +812,7 @@ def login_page():
 @app.get(BASE+'/settings/menus')
 @app.get(BASE+'/settings/roles')
 @app.get(BASE+'/settings/projects')
+@app.get(BASE+'/settings/users')
 def protected_page(request:Request):
     try:
         user=actor(request)
@@ -622,6 +822,8 @@ def protected_page(request:Request):
             check_permission(user,'role.view')
         elif request.url.path.endswith('/settings/projects'):
             check_permission(user,'project.view')
+        elif request.url.path.endswith('/settings/users'):
+            check_permission(user,'user.view')
     except HTTPException as e:
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)
