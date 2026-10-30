@@ -41,7 +41,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON dashboard.project TO 'dashboard_app'@'17
 GRANT SELECT, INSERT, UPDATE, DELETE ON dashboard.project_feature TO 'dashboard_app'@'172.17.0.1';
 
 -- 指标：查询 + 插入 + 更新（指标配置：新增/编辑/启停/关键指标与趋势开关）
-GRANT SELECT, INSERT, UPDATE (`project_id`, `category_id`, `name`, `name_key`, `english_name`, `unit`, `definition`, `definition_status`, `current_revision_id`, `beidou_metric_code`, `is_key_metric`, `show_trend`, `display_order`, `is_enabled`, `row_version`, `updated_at`, `updated_by`) ON dashboard.metric TO 'dashboard_app'@'172.17.0.1';
+GRANT SELECT, INSERT, UPDATE (`project_id`, `category_id`, `name`, `name_key`, `english_name`, `unit`, `decimal_places`, `definition`, `definition_status`, `current_revision_id`, `beidou_metric_code`, `is_key_metric`, `show_trend`, `display_order`, `is_enabled`, `row_version`, `updated_at`, `updated_by`) ON dashboard.metric TO 'dashboard_app'@'172.17.0.1';
 
 -- 指标类型：查询 + 编码序号原子递增（last_sequence）
 GRANT SELECT, UPDATE (`last_sequence`) ON dashboard.metric_category TO 'dashboard_app'@'172.17.0.1';

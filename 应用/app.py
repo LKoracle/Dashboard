@@ -812,6 +812,7 @@ class MetricPayload(BaseModel):
     project_id: int
     english_name: str = Field(default='',max_length=200)
     unit: str = Field(default='',max_length=32)
+    decimal_places: int = Field(default=1,ge=0,le=5,strict=True)
     definition: str = ''
     beidou_metric_code: str = Field(default='',max_length=100)
 
@@ -844,7 +845,7 @@ def list_metrics(request:Request):
     except HTTPException:
         can_create=False
     with database() as c:
-        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.definition,m.definition_status,
+        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.decimal_places,m.definition,m.definition_status,
                      m.is_key_metric,m.show_trend,m.is_enabled,m.row_version,m.project_id,m.category_id,
                      m.beidou_metric_code,m.display_order,p.name AS project_name,cat.name AS category_name
                      FROM metric m JOIN project p ON p.id=m.project_id
@@ -857,7 +858,7 @@ def list_metrics(request:Request):
     items=[]
     for r in rows:
         items.append({'id':r['id'],'code':r['code'],'name':r['name'],'english_name':r['english_name'] or '',
-            'unit':r['unit'] or '','definition':r['definition'] or '',
+            'unit':r['unit'] or '','decimal_places':r['decimal_places'],'definition':r['definition'] or '',
             'definition_status':r['definition_status'],
             'is_key_metric':bool(r['is_key_metric']),'show_trend':bool(r['show_trend']),
             'is_enabled':bool(r['is_enabled']),'row_version':r['row_version'],
@@ -873,14 +874,14 @@ def get_metric(metric_id:int,request:Request):
     user=actor(request)
     check_permission(user,'metric.view')
     with database() as c:
-        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.definition,m.beidou_metric_code,
+        c.execute('''SELECT m.id,m.code,m.name,m.english_name,m.unit,m.decimal_places,m.definition,m.beidou_metric_code,
                      m.category_id,m.project_id,m.is_enabled,m.row_version
                      FROM metric m WHERE m.id=%s''',(metric_id,))
         row=c.fetchone()
         if not row:
             raise HTTPException(404,'指标不存在')
     return {'id':row['id'],'code':row['code'],'name':row['name'],'english_name':row['english_name'] or '',
-            'unit':row['unit'] or '','definition':row['definition'] or '',
+            'unit':row['unit'] or '','decimal_places':row['decimal_places'],'definition':row['definition'] or '',
             'beidou_metric_code':row['beidou_metric_code'] or '','category_id':row['category_id'],
             'project_id':row['project_id'],'is_enabled':bool(row['is_enabled']),'row_version':row['row_version']}
 
@@ -909,7 +910,7 @@ def _insert_metric_revision(c, metric_id, row, uid, changed):
     c.execute('''INSERT INTO metric_revision(metric_id,revision_no,name,english_name,unit,value_kind,
                  decimal_places,currency_code,scope_kind,definition,definition_status,retention_window_days,created_by)
                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-              (metric_id,revision_no,changed['name'],changed['english_name'],changed['unit'],'DECIMAL',1,
+              (metric_id,revision_no,changed['name'],changed['english_name'],changed['unit'],'DECIMAL',changed['decimal_places'],
                None,'PROJECT',changed['definition'],changed['definition_status'],None,uid))
     c.execute('UPDATE metric SET current_revision_id=%s WHERE id=%s',(c.lastrowid,metric_id))
 
@@ -936,12 +937,12 @@ def create_metric(data:MetricPayload,request:Request):
                      value_kind,decimal_places,currency_code,scope_kind,definition,definition_status,
                      retention_window_days,current_revision_id,beidou_metric_code,is_key_metric,show_trend,
                      display_order,is_enabled,created_by,updated_by)
-                     VALUES(%s,%s,%s,%s,%s,%s,%s,'DECIMAL',1,NULL,'PROJECT',%s,%s,NULL,NULL,%s,0,0,%s,1,%s,%s)''',
-                  (data.project_id,data.category_id,code,name,name,english,unit,definition,definition_status,
+                     VALUES(%s,%s,%s,%s,%s,%s,%s,'DECIMAL',%s,NULL,'PROJECT',%s,%s,NULL,NULL,%s,0,0,%s,1,%s,%s)''',
+                  (data.project_id,data.category_id,code,name,name,english,unit,data.decimal_places,definition,definition_status,
                    beidou,display_order,user['id'],user['id']))
         metric_id=c.lastrowid
         _insert_metric_revision(c,metric_id,None,user['id'],
-            {'name':name,'english_name':english,'unit':unit,'definition':definition,'definition_status':definition_status})
+            {'name':name,'english_name':english,'unit':unit,'decimal_places':data.decimal_places,'definition':definition,'definition_status':definition_status})
         audit(c,user['id'],'metric.create','metric',metric_id,None,
               {'code':code,'name':name,'project_id':data.project_id,'category_id':data.category_id})
     return {'ok':True,'id':metric_id,'code':code}
@@ -953,7 +954,7 @@ def update_metric(metric_id:int,data:MetricPayload,request:Request):
     mutation(request)
     with database() as c:
         c.execute('''SELECT id,code,name,name_key,english_name,unit,definition,definition_status,
-                     category_id,project_id,row_version FROM metric WHERE id=%s FOR UPDATE''',(metric_id,))
+                     category_id,project_id,decimal_places,row_version FROM metric WHERE id=%s FOR UPDATE''',(metric_id,))
         row=c.fetchone()
         if not row:
             raise HTTPException(404,'指标不存在')
@@ -971,19 +972,20 @@ def update_metric(metric_id:int,data:MetricPayload,request:Request):
         definition_status='CONFIRMED' if definition else 'PENDING'
         beidou=data.beidou_metric_code.strip() or None
         before={'name':row['name'],'english_name':row['english_name'],'unit':row['unit'],
-                'definition':row['definition'],'category_id':row['category_id']}
+                'definition':row['definition'],'category_id':row['category_id'],'decimal_places':row['decimal_places']}
         c.execute('''UPDATE metric SET name=%s,name_key=%s,english_name=%s,unit=%s,definition=%s,
-                     definition_status=%s,beidou_metric_code=%s,category_id=%s,
+                     definition_status=%s,beidou_metric_code=%s,category_id=%s,decimal_places=%s,
                      row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s''',
-                  (name,name,english,unit,definition,definition_status,beidou,data.category_id,
+                  (name,name,english,unit,definition,definition_status,beidou,data.category_id,data.decimal_places,
                    user['id'],metric_id))
         revision_changed=(name!=row['name'] or english!=row['english_name'] or unit!=row['unit']
-                          or definition!=row['definition'] or definition_status!=row['definition_status'])
+                          or definition!=row['definition'] or definition_status!=row['definition_status']
+                          or data.decimal_places!=row['decimal_places'])
         if revision_changed:
             _insert_metric_revision(c,metric_id,row,user['id'],
-                {'name':name,'english_name':english,'unit':unit,'definition':definition,'definition_status':definition_status})
+                {'name':name,'english_name':english,'unit':unit,'decimal_places':data.decimal_places,'definition':definition,'definition_status':definition_status})
         after={'name':name,'english_name':english,'unit':unit,'definition':definition,
-               'category_id':data.category_id,'beidou_metric_code':beidou}
+               'category_id':data.category_id,'beidou_metric_code':beidou,'decimal_places':data.decimal_places}
         audit(c,user['id'],'metric.edit','metric',metric_id,before,after)
     return {'ok':True,'row_version':row['row_version']+1}
 
@@ -1090,12 +1092,12 @@ class MaintainSave(BaseModel):
 
 def _validate_value(raw, metric):
     unit=metric['unit'] or ''
-    dp=metric['decimal_places'] if metric['decimal_places'] and 1<=metric['decimal_places']<=6 else 6
+    dp=metric['decimal_places'] if metric['decimal_places'] is not None and 0<=metric['decimal_places']<=6 else 6
     if unit in ('人','次'):
         if not re.fullmatch(r'\d+',raw):
             raise HTTPException(400,f'「{metric["name"]}」请输入非负整数')
         return raw
-    if not re.fullmatch(r'\d+(\.\d{1,'+str(dp)+r'})?',raw):
+    if not re.fullmatch(r'\d+' if dp==0 else r'\d+(\.\d{1,'+str(dp)+r'})?',raw):
         raise HTTPException(400,f'「{metric["name"]}」请输入非负数，最多 {dp} 位小数')
     if unit=='%' and float(raw)>100:
         raise HTTPException(400,f'「{metric["name"]}」比例应在 0～100 之间')
