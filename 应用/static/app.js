@@ -488,12 +488,12 @@ function openMaintainImportDialog(){mtImport.file=null;mtImport.name='';mtImport
 function mtImportDialogRefresh(){const dlg=document.querySelector('#maintImportDialog');if(!dlg||!dlg.open)return;
  document.querySelector('#mtImportFileName').textContent=mtImport.name||'未选择文件';
  const validate=document.querySelector('#mtImportValidate');
- validate.disabled=!mtImport.file||mtImport.busy;validate.textContent=mtImport.busy?'处理中…':'导入';
+ validate.disabled=!mtImport.file||mtImport.busy;validate.textContent=mtImport.busy?'校验中…':'数据校验';
  const data=mtImport.result||mtImport.preview;
+ document.querySelector('#mtImportActions').hidden=!data;
  const commit=document.querySelector('#mtImportCommit');
  commit.hidden=!mtImport.preview||!!mtImport.result;
  commit.disabled=mtImport.busy||!mtImport.preview?.counts.valid;
- document.querySelector('#mtImportReport').hidden=!data;
  const status=document.querySelector('#mtImportStatus');status.replaceChildren();
  if(mtImport.error)status.append(el('p',mtImport.error,'form-error'));
  if(mtImport.preview){const c=mtImport.preview.counts;
