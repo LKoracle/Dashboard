@@ -99,6 +99,8 @@ tr.drop-after{box-shadow:inset 0 -2px 0 #2563eb}
 .metric-search-actions{display:flex;gap:8px;align-items:center}
 .metric-search-actions button{min-height:38px;white-space:nowrap}
 .metric-search-count{margin:0 0 12px;color:#7c8ba1;font-size:12px}
+.mt-history-search .metric-search-field{min-width:146px}
+.mt-history-name{flex:1;min-width:180px;max-width:420px}
 @media(max-width:760px){.metric-search-field,.metric-search-name{flex:1 1 100%;max-width:none;min-width:0}.metric-search-actions{width:100%}}
 
 .maint-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0}.maint-toolbar input[type=file]{max-width:310px;font-size:12px}.error-banner{border:1px solid #f3b7b7;border-radius:8px;padding:12px;color:#9f3030;background:#fff8f8}.error-banner p{margin-top:0}

@@ -1480,9 +1480,10 @@ def import_csv(data:ImportCSV,request:Request):
     return {'saved':saved,'skipped':preview['skipped'],'errors':errors,'total':preview['total']}
 
 @app.get(BASE+'/api/maintain/history')
-def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:str='',before_id:int|None=None):
+def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:str='',stat_date:str='',source:str='',metric:str='',before_id:int|None=None):
     user=actor(request);check_permission(user,'maintain.view')
-    if len(q)>100:raise HTTPException(400,'搜索内容过长')
+    if len(q)>100 or len(metric)>100:raise HTTPException(400,'搜索内容过长')
+    if source not in ('','MANUAL','CSV','EXCEL'):raise HTTPException(400,'无效的来源筛选')
     with database() as c:
         require_project(c,user,'maintain.view',project_id,True)
         query="""SELECT a.id,a.created_at,a.actor_user_id,a.source_type,a.action_code,a.before_payload,a.after_payload,u.login_id AS actor_login,u.display_name AS actor_name,
@@ -1499,11 +1500,17 @@ def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:
     for row in records:
         before=json.loads(row['before_payload']) if isinstance(row['before_payload'],str) else row['before_payload']
         after=json.loads(row['after_payload']) if isinstance(row['after_payload'],str) else row['after_payload']
-        info=after or before or {};source={'CSV':'CSV 导入','EXCEL':'Excel 导入'}.get(row['source_type'],'手工录入')
+        info=after or before or {};source_label={'CSV':'CSV 导入','EXCEL':'Excel 导入'}.get(row['source_type'],'手工录入')
         if category_id is not None and info.get('category_id')!=category_id:continue
-        if q and q.casefold() not in (str(info.get('stat_date',''))+' '+source+' '+str(row['created_at'])).casefold():continue
+        if stat_date and str(info.get('stat_date',''))!=stat_date:continue
+        if source:
+            row_source=(row['source_type'] or '').upper()
+            if source=='MANUAL' and row_source in ('CSV','EXCEL'):continue
+            if source!='MANUAL' and row_source!=source:continue
+        if metric and metric.casefold() not in str(info.get('metric','')).casefold():continue
+        if q and q.casefold() not in (str(info.get('stat_date',''))+' '+source_label+' '+str(row['created_at'])).casefold():continue
         items.append({'id':row['id'],'saved_at':row['created_at'].isoformat(),'stat_date':info.get('stat_date',''),
-            'metric':info.get('metric',''),'feature_id':info.get('feature_id'),'source':source,
+            'metric':info.get('metric',''),'feature_id':info.get('feature_id'),'source':source_label,
             'before':before.get('value') if before else None,'after':after.get('value') if after else None,
             'operator':'系统操作' if row['actor_login']=='admin' or row['system_actor'] else (row['actor_name'] or '已移除用户')})
     return {'items':items,'next_before_id':records[-1]['id'] if len(records)==200 else None}
