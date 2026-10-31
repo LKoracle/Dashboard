@@ -1393,6 +1393,7 @@ def login_page():
 @app.get(BASE+'/settings/projects')
 @app.get(BASE+'/settings/users')
 @app.get(BASE+'/settings/metrics')
+@app.get(BASE+'/settings/funnels')
 def protected_page(request:Request):
     try:
         user=actor(request)
