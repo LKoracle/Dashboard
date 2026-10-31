@@ -39,6 +39,7 @@ def test_save_and_revision_use_precision(monkeypatch,dp,create):
  data=module.MetricPayload(name='测试',category_id=1,project_id=1,unit='%',decimal_places=dp)
  if create:module.create_metric(data,None)
  else:module.update_metric(7,data,None)
+ assert any('INSERT INTO metric_binding' in sql and args==((101 if create else 7),) for sql,args in calls)
  revision=next(args for sql,args in calls if 'INSERT INTO metric_revision' in sql)
  assert revision[6]==dp
  if create:assert next(args for sql,args in calls if 'INSERT INTO metric(' in sql)[7]==dp

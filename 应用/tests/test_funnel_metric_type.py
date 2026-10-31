@@ -49,3 +49,20 @@ def test_dropdown_query_limits_type(monkeypatch):
  assert module.list_funnels(None)['options']==[]
  query=next(q for q in queries if 'AS binding_id' in q)
  assert "cat.code='funnel'" in query and 'cat.is_enabled=1' in query
+
+@pytest.mark.parametrize('enabled',[True,False])
+def test_enabling_metric_ensures_binding(monkeypatch,enabled):
+ ensured=[]
+ class C:
+  def execute(self,*a):pass
+  def fetchone(self):return {'id':7,'code':'T','name':'曝光','is_enabled':not enabled,'row_version':1}
+ @contextmanager
+ def db():yield C()
+ monkeypatch.setattr(module,'database',db)
+ monkeypatch.setattr(module,'actor',lambda r:{'id':1})
+ monkeypatch.setattr(module,'check_permission',lambda *a:None)
+ monkeypatch.setattr(module,'mutation',lambda *a:None)
+ monkeypatch.setattr(module,'audit',lambda *a:None)
+ monkeypatch.setattr(module,'_ensure_funnel_metric_binding',lambda c,mid:ensured.append(mid))
+ module.toggle_metric(7,module.MetricSwitch(is_enabled=enabled,row_version=1),None)
+ assert ensured==([7] if enabled else [])

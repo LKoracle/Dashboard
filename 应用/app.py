@@ -910,6 +910,16 @@ def _validate_metric(c, data, metric_id=None):
         raise HTTPException(409,'该项目已存在同名指标，请修改指标名称或选择其他项目')
     return name
 
+def _ensure_funnel_metric_binding(c, metric_id):
+    # Keep a project-level data item available when a funnel metric is created,
+    # reclassified or enabled. Existing/archived bindings are never overwritten.
+    c.execute("""INSERT INTO metric_binding(project_id,metric_id,feature_id,subject_key)
+        SELECT m.project_id,m.id,NULL,'PROJECT' FROM metric m
+        JOIN metric_category cat ON cat.id=m.category_id
+        WHERE m.id=%s AND cat.code='funnel' AND m.is_enabled=1 AND m.archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM metric_binding b
+                        WHERE b.metric_id=m.id AND b.subject_key='PROJECT')""",(metric_id,))
+
 def _insert_metric_revision(c, metric_id, row, uid, changed):
     c.execute('SELECT COALESCE(MAX(revision_no),0)+1 AS next FROM metric_revision WHERE metric_id=%s',(metric_id,))
     revision_no=c.fetchone()['next']
@@ -949,6 +959,7 @@ def create_metric(data:MetricPayload,request:Request):
         metric_id=c.lastrowid
         _insert_metric_revision(c,metric_id,None,user['id'],
             {'name':name,'english_name':english,'unit':unit,'decimal_places':data.decimal_places,'definition':definition,'definition_status':definition_status})
+        _ensure_funnel_metric_binding(c,metric_id)
         audit(c,user['id'],'metric.create','metric',metric_id,None,
               {'code':code,'name':name,'project_id':data.project_id,'category_id':data.category_id})
     return {'ok':True,'id':metric_id,'code':code}
@@ -990,6 +1001,7 @@ def update_metric(metric_id:int,data:MetricPayload,request:Request):
         if revision_changed:
             _insert_metric_revision(c,metric_id,row,user['id'],
                 {'name':name,'english_name':english,'unit':unit,'decimal_places':data.decimal_places,'definition':definition,'definition_status':definition_status})
+        _ensure_funnel_metric_binding(c,metric_id)
         after={'name':name,'english_name':english,'unit':unit,'definition':definition,
                'category_id':data.category_id,'beidou_metric_code':beidou,'decimal_places':data.decimal_places}
         audit(c,user['id'],'metric.edit','metric',metric_id,before,after)
@@ -1017,6 +1029,8 @@ def toggle_metric(metric_id:int,data:MetricSwitch,request:Request):
         c.execute(f'UPDATE metric SET {field}=%s,row_version=row_version+1,updated_by=%s,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
                   (int(value),user['id'],metric_id))
         if field=='is_enabled':
+            if value:
+                _ensure_funnel_metric_binding(c,metric_id)
             action='metric.enable' if value else 'metric.disable'
         elif field=='is_key_metric':
             action='metric.key'

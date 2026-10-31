@@ -64,3 +64,6 @@ FLUSH PRIVILEGES;
 GRANT SELECT ON dashboard.funnel TO 'dashboard_app'@'172.17.0.1';
 GRANT SELECT ON dashboard.funnel_step TO 'dashboard_app'@'172.17.0.1';
 GRANT SELECT ON dashboard.metric_binding TO 'dashboard_app'@'172.17.0.1';
+
+-- 漏斗指标保存时同步创建数据项，只允许新增必要字段，不允许修改/删除现有绑定。
+GRANT INSERT (`project_id`, `metric_id`, `feature_id`, `subject_key`) ON dashboard.metric_binding TO 'dashboard_app'@'172.17.0.1';
