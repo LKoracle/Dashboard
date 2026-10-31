@@ -212,10 +212,13 @@ function mtSection(cat){const metrics=mtMetricsOf(cat.id);
  section.append(grid);return section;}
 function renderMaintain(){content.replaceChildren();
  if(!mtBoot){content.replaceChildren(el('p','数据维护 / 指标录入','breadcrumb'),el('p','配置加载失败，请刷新重试。','form-error'));return;}
- content.append(el('p','数据维护 / 指标录入','breadcrumb'));
- const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
+ if(mtView==='history'){renderMaintainHistoryPage();return;}
+ content.append(el('p','数据维护','breadcrumb'));
+ const heading=el('div',undefined,'page-heading with-actions');const titleRow=el('div',undefined,'title-row');
  titleRow.append(el('h1','指标数据维护'),el('p','按项目、统计日期维护已启用指标的数值数据。','subtitle'));
- heading.append(titleRow);content.append(heading);
+ const headActions=el('div',undefined,'page-heading-actions');
+ headActions.append(buildImportDropdown(),buildHistoryButton());
+ heading.append(titleRow,headActions);content.append(heading);
  const ctx=el('div',undefined,'mt-context');
  const tabs=el('div',undefined,'mt-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','切换项目');
  for(const p of mtBoot.projects){const b=el('button',p.name,'mt-tab'+(p.id===mtProject?' active':''));b.type='button';b.disabled=mtSaving;b.setAttribute('aria-pressed',String(p.id===mtProject));b.addEventListener('click',()=>mtSwitchProject(p.id));tabs.append(b);}
@@ -234,15 +237,26 @@ function renderMaintain(){content.replaceChildren();
  dateLabel.htmlFor='mtDateInput';
  dateRow.append(dateLabel,stepper);
  if(mtIsDirty())dateRow.append(el('span','当前项目与日期下有未保存的更改，切换后将保留草稿。','mt-dirty-note'));
- ctx.append(dateRow);content.append(ctx);if(mtStatus==='error'){const error=el('div',undefined,'error-banner');error.append(el('p',mtMsg));const retry=el('button','重新加载数据','secondary');retry.onclick=async()=>{if(mtIsDirty()&&!confirm('重新加载会放弃当前未保存的修改，是否继续？'))return;mtDraft.clear();mtStash.delete(mtProject+'|'+mtDate);await mtLoadData();render();};error.append(retry);content.append(error);}if(!mtBoot.projects.length)content.append(el('p','暂无有权访问的启用项目','maint-empty'));
- const tools=el('div',undefined,'maint-toolbar');
- for(const [key,label] of [['entry','指标录入'],['import','数据导入'],['history','修改记录'],['sync','云文档同步']]){const button=el('button',label,mtView===key?'primary':'secondary');button.type='button';button.disabled=mtSaving||(key==='import'&&!mtBoot.projects.some(p=>p.can_import));button.onclick=()=>{mtView=key;render();if(key==='history')fetchMaintainHistory();};tools.append(button);}content.append(tools);
- if(mtView!=='entry'){document.querySelector('#savebar').hidden=true;renderMaintainAux(content);return;}
+ ctx.append(dateRow);content.append(ctx);if(mtStatus==='error'){const error=el('div',undefined,'error-banner');error.append(el('p',mtMsg));const retry=el('button','重新加载数据','secondary');retry.onclick=async()=>{if(mtIsDirty()&&!confirm('重新加载会放弃当前未保存的修改，是否继续？'))return;mtDraft.clear();mtStash.delete(mtProject+'|'+mtDate);await mtLoadData();render();};error.append(retry);content.append(error);} if(!mtBoot.projects.length)content.append(el('p','暂无有权访问的启用项目','maint-empty'));
  const grid=el('div',undefined,'maint-sections');
  for(const cat of mtBoot.categories)grid.append(mtSection(cat));
  content.append(grid);
  updateSavebar();}
 document.querySelector('#saveMaintainBtn').addEventListener('click',saveMaintain);
+document.addEventListener('click',e=>{const dd=document.querySelector('.mt-dd.open');if(dd&&!dd.contains(e.target))dd.classList.remove('open');});
+document.querySelector('#mtImportClose').addEventListener('click',()=>document.querySelector('#maintImportDialog').close());
+document.querySelector('#mtImportPick').addEventListener('click',()=>document.querySelector('#mtImportFile').click());
+document.querySelector('#mtImportFile').addEventListener('change',async e=>{const selected=e.target.files[0];if(!selected)return;
+ if(selected.size>2*1024*1024){notify('文件不能超过 2 MB');e.target.value='';return;}
+ if(!/\.xlsx$/i.test(selected.name)){notify('请选择 .xlsx 文件');e.target.value='';return;}
+ mtImport.busy=true;mtImport.error='';mtImport.preview=null;mtImport.result=null;mtImportDialogRefresh();
+ try{const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('无法读取文件'));reader.readAsDataURL(selected);});
+  mtImport.file=data;mtImport.name=selected.name;}
+ catch(ex){mtImport.file=null;mtImport.error='无法读取 Excel 文件，请重试';}
+ mtImport.busy=false;mtImportDialogRefresh();});
+document.querySelector('#mtImportValidate').addEventListener('click',validateMaintainImport);
+document.querySelector('#mtImportCommit').addEventListener('click',commitMaintainImport);
+document.querySelector('#mtImportReport').addEventListener('click',downloadMaintainImportReport);
 
 // ==================== 漏斗管理 ====================
 let funnels=[],funnelOptions=[],funnelProjects=[],funnelsCanCreate=false,funnelsCanEdit=false;
@@ -442,39 +456,56 @@ async function downloadImportFile(path,name){
 }
 async function downloadMaintainTemplate(){try{await downloadImportFile('/maintain/import/template?stat_date='+encodeURIComponent(mtDate),'指标批量导入模板.xlsx');}catch(e){notify(e.message);}}
 async function downloadMaintainImportReport(){const data=mtImport.result||mtImport.preview;if(!data)return;try{await downloadImportFile('/maintain/import/excel/'+data.batch_id+'/report',mtImport.name.replace(/\.xlsx$/i,'')+'_导入结果.xlsx');}catch(e){notify(e.message);}}
-async function validateMaintainImport(){if(!mtImport.file||mtImport.busy)return;const state=mtImport;state.busy=true;state.error='';render();
- try{const data=await api('/maintain/import/excel/preview',{method:'POST',body:JSON.stringify({file_name:state.name,file_base64:state.file})});if(state===mtImport){state.preview=data;state.result=null;}}
- catch(e){state.error=e.message;state.preview=null;}finally{state.busy=false;if(state===mtImport)render();}}
-async function commitMaintainImport(){const state=mtImport;if(state.busy||!state.preview?.counts.valid)return;state.busy=true;mtSaving=true;state.error='';render();
- try{const result=await api('/maintain/import/excel/'+state.preview.batch_id+'/commit',{method:'POST',body:'{}'});if(state===mtImport){state.result=result;state.preview=null;mtHistory=null;notify(result.phase==='completed'?'导入完成：新增 '+result.counts.inserted+' 条，修改 '+result.counts.updated+' 条':'导入结果需要核对，请下载回执');await mtLoadData();}}
- catch(e){state.error=e.message;}finally{state.busy=false;mtSaving=false;if(state===mtImport)render();}}
+async function validateMaintainImport(){if(!mtImport.file||mtImport.busy)return;mtImport.busy=true;mtImport.error='';mtImport.preview=null;mtImport.result=null;mtImportDialogRefresh();
+ try{const data=await api('/maintain/import/excel/preview',{method:'POST',body:JSON.stringify({file_name:mtImport.name,file_base64:mtImport.file})});mtImport.preview=data;mtImport.result=null;}
+ catch(e){mtImport.error=e.message;mtImport.preview=null;}
+ mtImport.busy=false;mtImportDialogRefresh();}
+async function commitMaintainImport(){const state=mtImport;if(state.busy||!state.preview?.counts.valid)return;state.busy=true;mtSaving=true;mtImportDialogRefresh();
+ try{const result=await api('/maintain/import/excel/'+state.preview.batch_id+'/commit',{method:'POST',body:'{}'});state.result=result;state.preview=null;mtHistory=null;await mtLoadData();render();}
+ catch(e){state.error=e.message;}
+ state.busy=false;mtSaving=false;mtImportDialogRefresh();}
+function buildImportDropdown(){const wrap=el('div',undefined,'mt-dd');
+ const btn=el('button',undefined,'secondary');btn.type='button';btn.innerHTML=ICONS.down+'批量导入';btn.setAttribute('aria-haspopup','true');
+ btn.addEventListener('click',e=>{e.stopPropagation();wrap.classList.toggle('open');});
+ const menu=el('div',undefined,'mt-dd-menu');
+ const tpl=el('button','下载模板','mt-dd-item');tpl.type='button';tpl.disabled=mtImport.busy;
+ tpl.addEventListener('click',()=>{wrap.classList.remove('open');downloadMaintainTemplate();});
+ const imp=el('button','数据导入','mt-dd-item');imp.type='button';imp.disabled=mtImport.busy||!mtBoot.projects.some(p=>p.can_import);
+ imp.addEventListener('click',()=>{wrap.classList.remove('open');openMaintainImportDialog();});
+ menu.append(tpl,imp);wrap.append(btn,menu);return wrap;}
+function buildHistoryButton(){const b=el('button','修改记录','secondary');b.type='button';b.disabled=mtSaving;
+ b.addEventListener('click',()=>{mtView='history';render();fetchMaintainHistory();});return b;}
+function renderMaintainHistoryPage(){content.replaceChildren();
+ content.append(el('p','数据维护 / 修改记录','breadcrumb'));
+ const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
+ titleRow.append(el('h1','修改记录'),el('p','查看指标数据的保存与导入变更历史。','subtitle'));
+ const back=el('button','返回数据维护','secondary');back.addEventListener('click',()=>{mtView='entry';render();});
+ heading.append(titleRow,back);content.append(heading);
+ document.querySelector('#savebar').hidden=true;
+ renderMaintainAux(content);}
+function openMaintainImportDialog(){mtImport.file=null;mtImport.name='';mtImport.preview=null;mtImport.result=null;mtImport.error='';mtImport.busy=false;
+ document.querySelector('#maintImportDialog').showModal();mtImportDialogRefresh();}
+function mtImportDialogRefresh(){const dlg=document.querySelector('#maintImportDialog');if(!dlg||!dlg.open)return;
+ document.querySelector('#mtImportFileName').textContent=mtImport.name||'未选择文件';
+ const validate=document.querySelector('#mtImportValidate');
+ validate.disabled=!mtImport.file||mtImport.busy;validate.textContent=mtImport.busy?'处理中…':'导入';
+ const data=mtImport.result||mtImport.preview;
+ const commit=document.querySelector('#mtImportCommit');
+ commit.hidden=!mtImport.preview||!!mtImport.result;
+ commit.disabled=mtImport.busy||!mtImport.preview?.counts.valid;
+ document.querySelector('#mtImportReport').hidden=!data;
+ const status=document.querySelector('#mtImportStatus');status.replaceChildren();
+ if(mtImport.error)status.append(el('p',mtImport.error,'form-error'));
+ if(mtImport.preview){const c=mtImport.preview.counts;
+  status.append(el('p','导入数据 '+c.total+' 条，有效数据 '+c.valid+' 条，无效数据 '+c.invalid+' 条。其中新增数据 '+c.insert+' 条，更新数据 '+c.update+' 条。','mt-import-stats'));
+  if(!c.valid)status.append(el('p','没有有效数据可写入，请修正文件后重新导入。','muted'));}
+ if(mtImport.result){const c=mtImport.result.counts;
+  status.append(el('p','导入数据 '+c.total+' 条，有效数据 '+c.valid+' 条，无效数据 '+c.invalid+' 条。其中新增数据 '+c.inserted+' 条，更新数据 '+c.updated+' 条。','mt-import-stats'));
+  status.append(el('p',mtImport.result.phase==='completed'?'全部有效数据已写入。':'处理异常或中断，请下载标注结果核对已完成及待核对的数据。','muted'));}}
 async function fetchMaintainHistory(before=null){const request=++mtHistoryVersion,project=mtProject;const previous=before&&mtHistory?.items||[];mtHistory={items:previous,loading:true,error:'',next:null};render();
  try{const params=new URLSearchParams({project_id:String(project),q:mtHistoryFilter.q});if(mtHistoryFilter.category)params.set('category_id',mtHistoryFilter.category);if(before)params.set('before_id',String(before));const data=await api('/maintain/history?'+params);if(request!==mtHistoryVersion||project!==mtProject)return;mtHistory={items:[...previous,...data.items],loading:false,error:'',next:data.next_before_id};}
  catch(e){if(request!==mtHistoryVersion)return;mtHistory={items:previous,loading:false,error:e.message,next:null};}render();}
 function renderMaintainAux(target){const card=el('section',undefined,'card');target.append(card);
- if(mtView==='sync'){card.append(el('h2','云文档同步 · 待配置'),el('p','文档平台、授权和字段映射尚未确定，当前未连接云文档。','muted'),el('p','接入前可使用手工录入或 Excel 批量导入维护数据。'));return;}
- if(mtView==='import'){
-  card.append(el('h2','批量导入'),el('p','一个 Excel 文件可同时导入多个授权项目、多个日期，不受上方项目和日期选择限制。相同项目、指标、功能与日期的数据将更新；空白数值跳过，保留已有数据。','muted'));
-  card.append(el('p','支持 .xlsx，最多 2 MB、1,000 条。先导入校验，再确认写入有效数据。每个项目与日期为一组，关系校验或并发冲突失败时该组不写入。','muted'));
-  const actions=el('div',undefined,'maint-toolbar');const template=el('button','下载 Excel 模板','secondary');template.onclick=downloadMaintainTemplate;template.disabled=mtImport.busy;actions.append(template);
-  const file=el('input');file.type='file';file.accept='.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';file.setAttribute('aria-label','选择 Excel 文件');file.disabled=mtImport.busy;file.hidden=true;
-  file.onchange=async()=>{const selected=file.files[0];if(!selected)return;if(selected.size>2*1024*1024){notify('文件不能超过 2 MB');return;}if(!/\.xlsx$/i.test(selected.name)){notify('请选择 .xlsx 文件');return;}
-   const state=mtImport;state.busy=true;state.error='';state.preview=null;state.result=null;render();try{const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('无法读取文件'));reader.readAsDataURL(selected);});if(state===mtImport){state.file=data;state.name=selected.name;}}
-   catch(e){state.file=null;state.error='无法读取 Excel 文件，请重试';}finally{state.busy=false;if(state===mtImport)render();}};const picker=el('button',mtImport.name?'重新选择文件':'选择 Excel 文件','secondary');picker.disabled=mtImport.busy;picker.onclick=()=>file.click();actions.append(file,picker);
-  const validate=el('button',mtImport.busy?'处理中…':'导入并校验','primary');validate.disabled=!mtImport.file||mtImport.busy;validate.onclick=validateMaintainImport;actions.append(validate);
-  const commit=el('button','确认导入有效数据','primary');commit.disabled=!mtImport.preview?.counts.valid||mtImport.busy;commit.onclick=commitMaintainImport;actions.append(commit);
-  const data=mtImport.result||mtImport.preview;
-  const report=el('button','下载标注结果的原表','secondary');report.disabled=!data||mtImport.busy;report.onclick=downloadMaintainImportReport;actions.append(report);card.append(actions);
-  if(mtImport.name)card.append(el('p','已选择：'+mtImport.name));if(mtImport.error)card.append(el('p',mtImport.error,'form-error'));
-  if(data){const c=data.counts,summary=el('div',undefined,'import-counts');summary.setAttribute('aria-label','批量导入统计');
-   for(const [label,value] of [['总记录',c.total],['有效',c.valid],['无效',c.invalid],[mtImport.result?'已新增':'将新增',mtImport.result?c.inserted:c.insert],[mtImport.result?'已修改':'将修改',mtImport.result?c.updated:c.update],['无需修改',c.unchanged],['未填写数值',c.skipped]]){const item=el('div',undefined,'import-count');item.append(el('span',label),el('strong',String(value)));summary.append(item);}card.append(summary);
-   card.append(el('p',mtImport.result?(data.phase==='completed'?'处理完成。请下载原表查看每行处理结果。':'处理异常或中断，请下载原表核对已完成及待核对的数据。'):'校验完成，尚未写入数据。请核对新增和修改数量后确认导入；也可先下载标注原表。','muted'));
-   const wrap=el('div',undefined,'table-wrap'),table=el('table');const head=el('tr');['工作表／行','项目','统计日期','指标','原值','导入值','有效性','处理类型','状态','说明'].forEach(t=>head.append(el('th',t)));table.append(head);
-   for(const r of data.rows.slice(0,100)){const row=el('tr');[r.sheet+' / '+r.row,r.project,r.date,r.metric,r.old_value,r.value,r.validity,r.action,r.status,r.reason].forEach(v=>row.append(el('td',String(v??''))));table.append(row);}wrap.append(table);card.append(wrap);
-   if(data.rows.length>100)card.append(el('p','页面展示前 100 条，下载原表可查看全部 '+data.rows.length+' 条记录。','muted'));
-  }
-  return;
- }
  card.append(el('h2','修改记录'));
  const form=el('form',undefined,'metric-search');form.setAttribute('aria-label','修改记录查询');const category=el('select');category.setAttribute('aria-label','记录指标类型');const all=el('option','全部类型');all.value='';category.append(all);for(const c of mtBoot.categories){const o=el('option',c.name);o.value=c.id;category.append(o);}category.value=mtHistoryFilter.category;
  const search=el('input');search.type='search';search.placeholder='按统计日期、保存日期或来源搜索';search.setAttribute('aria-label','搜索修改记录');search.value=mtHistoryFilter.q;search.maxLength=100;

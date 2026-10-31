@@ -30,7 +30,7 @@ assert.deepEqual(Array.from(vm.runInContext("extraTrendSeries({category:'feature
 console.log('功能级自定义趋势按功能分别绑定检查通过');
 (async()=>{
  const calls=[],state={file:'eGxzeA==',name:'多项目.xlsx',preview:null,result:null,busy:false,error:''};
- const c=vm.createContext({mtImport:state,mtSaving:false,mtHistory:{},render(){},notify(){},mtLoadData:async()=>true,api:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return url.endsWith('/preview')?{batch_id:'owned-batch',counts:{valid:3,insert:2,update:1}}:{phase:'completed',counts:{inserted:2,updated:1}};}});
+ const c=vm.createContext({mtImport:state,mtSaving:false,mtHistory:{},render(){},notify(){},mtLoadData:async()=>true,mtImportDialogRefresh(){},document:{querySelector:()=>null},api:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return url.endsWith('/preview')?{batch_id:'owned-batch',counts:{valid:3,insert:2,update:1}}:{phase:'completed',counts:{inserted:2,updated:1}};}});
  vm.runInContext(section(source,'async function validateMaintainImport(){','async function fetchMaintainHistory('),c);
  await vm.runInContext('validateMaintainImport()',c);
  assert.equal(calls[0].body.file_name,'多项目.xlsx');assert.equal('project_id' in calls[0].body,false);
