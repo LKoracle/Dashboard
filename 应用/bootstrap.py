@@ -4,7 +4,7 @@ from app import database, audit
 
 MENUS=[
  ('home','首页',None,'/', ['查看']),
- ('maintain','数据维护',None,None,['查看','编辑','批量导入','云文档同步']),
+ ('maintain','数据维护',None,None,['查看','编辑','批量导入']),
  ('settings','设置管理',None,None,[]),
  ('project','项目管理','settings',None,['查看','新增项目','编辑项目']),
  ('metric','指标管理','settings',None,['查看','新增指标','编辑指标']),
@@ -13,7 +13,7 @@ MENUS=[
  ('menu','菜单管理','permission','/settings/menus',['查看','编辑','新增']),
  ('role','角色管理','permission',None,['查看','编辑','新增']),
  ('user','用户管理','permission',None,['查看','编辑','新增','重置密码'])]
-ACTIONS={'查看':'view','编辑':'edit','新增':'create','重置密码':'reset_password','批量导入':'import','云文档同步':'sync','启用':'enable','停用':'disable','新增项目':'create','编辑项目':'edit','新增指标':'create','编辑指标':'edit','新增漏斗':'create','编辑漏斗':'edit'}
+ACTIONS={'查看':'view','编辑':'edit','新增':'create','重置密码':'reset_password','批量导入':'import','启用':'enable','停用':'disable','新增项目':'create','编辑项目':'edit','新增指标':'create','编辑指标':'edit','新增漏斗':'create','编辑漏斗':'edit'}
 
 def seed(password_hash):
     if not re.fullmatch(r'\$argon2id\$[^\n]{50,240}',password_hash):
