@@ -460,9 +460,10 @@ async function validateMaintainImport(){if(!mtImport.file||mtImport.busy)return;
  catch(e){mtImport.error=e.message;mtImport.preview=null;}
  mtImport.busy=false;mtImportDialogRefresh();}
 async function commitMaintainImport(){const state=mtImport;if(state.busy||!state.preview?.counts.valid)return;state.busy=true;mtSaving=true;mtImportDialogRefresh();
- try{const result=await api('/maintain/import/excel/'+state.preview.batch_id+'/commit',{method:'POST',body:'{}'});state.result=result;state.preview=null;mtHistory=null;await mtLoadData();render();}
+ try{const result=await api('/maintain/import/excel/'+state.preview.batch_id+'/commit',{method:'POST',body:'{}'});state.result=result;state.preview=null;mtHistory=null;}
  catch(e){state.error=e.message;}
- state.busy=false;mtSaving=false;mtImportDialogRefresh();}
+ state.busy=false;mtSaving=false;mtImportDialogRefresh();
+ if(state.result){await mtLoadData();render();}}
 function buildImportDropdown(){const wrap=el('div',undefined,'mt-dd');
  const btn=el('button',undefined,'secondary');btn.type='button';btn.innerHTML=ICONS.down+'批量导入';btn.setAttribute('aria-haspopup','true');
  btn.addEventListener('click',e=>{e.stopPropagation();wrap.classList.toggle('open');});

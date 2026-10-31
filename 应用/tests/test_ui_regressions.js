@@ -30,12 +30,14 @@ assert.deepEqual(Array.from(vm.runInContext("extraTrendSeries({category:'feature
 console.log('功能级自定义趋势按功能分别绑定检查通过');
 (async()=>{
  const calls=[],state={file:'eGxzeA==',name:'多项目.xlsx',preview:null,result:null,busy:false,error:''};
- const c=vm.createContext({mtImport:state,mtSaving:false,mtHistory:{},render(){},notify(){},mtLoadData:async()=>true,mtImportDialogRefresh(){},document:{querySelector:()=>null},api:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return url.endsWith('/preview')?{batch_id:'owned-batch',counts:{valid:3,insert:2,update:1}}:{phase:'completed',counts:{inserted:2,updated:1}};}});
+ const c=vm.createContext({mtImport:state,mtSaving:false,mtHistory:{},notify(){},mtLoadData:async()=>true,mtImportDialogRefresh(){},document:{querySelector:()=>null},api:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return url.endsWith('/preview')?{batch_id:'owned-batch',counts:{valid:3,insert:2,update:1}}:{phase:'completed',counts:{inserted:2,updated:1}};}});
+ vm.runInContext('var capture={saving:null};render=function(){capture.saving=mtSaving;};',c);
  vm.runInContext(section(source,'async function validateMaintainImport(){','async function fetchMaintainHistory('),c);
  await vm.runInContext('validateMaintainImport()',c);
  assert.equal(calls[0].body.file_name,'多项目.xlsx');assert.equal('project_id' in calls[0].body,false);
  await vm.runInContext('commitMaintainImport()',c);
  assert.equal(calls[1].url,'/maintain/import/excel/owned-batch/commit');assert.deepEqual(calls[1].body,{});
  assert.equal(c.mtSaving,false);assert.equal(state.result.counts.updated,1);
+ assert.equal(vm.runInContext('capture.saving',c),false);
  console.log('Excel 前端流程通过：跨项目文件校验、确认服务端批次、更新统计与保存锁');
 })().catch(e=>{console.error(e);process.exitCode=1});
