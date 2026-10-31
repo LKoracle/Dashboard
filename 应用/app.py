@@ -1036,6 +1036,18 @@ def _maintain_categories(c):
     c.execute('SELECT id,name,code FROM metric_category WHERE is_enabled=1 ORDER BY display_order,id')
     return c.fetchall()
 
+class FunnelStepPayload(BaseModel):
+    step_name:str
+    binding_id:int
+
+class FunnelPayload(BaseModel):
+    project_id:int
+    name:str
+    steps:list[FunnelStepPayload]
+
+class FunnelSwitch(BaseModel):
+    enabled:bool
+
 @app.get(BASE+'/api/maintain/bootstrap')
 def maintain_bootstrap(request:Request):
     user=actor(request)
@@ -1214,6 +1226,162 @@ def maintain_save(data:MaintainSave,request:Request):
                 saved+=1
     return {'ok':True,'saved':saved}
 
+# ---- 漏斗管理：漏斗列表 / 新增 / 编辑 / 启停 ----
+def _validate_funnel(c,data,funnel_id=None):
+    name=data.name.strip()
+    if not name:
+        raise HTTPException(400,'请填写漏斗名称')
+    if len(name)>100:
+        raise HTTPException(400,'漏斗名称不能超过 100 字')
+    c.execute('SELECT id,is_enabled FROM project WHERE id=%s',(data.project_id,))
+    if not c.fetchone():
+        raise HTTPException(400,'适用项目不存在')
+    name_key=name.lower()
+    c.execute('SELECT id FROM funnel WHERE project_id=%s AND name_key=%s',(data.project_id,name_key))
+    row=c.fetchone()
+    if row and row['id']!=funnel_id:
+        raise HTTPException(400,'该项目已存在同名漏斗')
+    if not data.steps:
+        raise HTTPException(400,'请至少添加一个漏斗步骤')
+    if len(data.steps)>20:
+        raise HTTPException(400,'漏斗步骤不能超过 20 个')
+    seen=set()
+    for i,st in enumerate(data.steps,1):
+        sn=st.step_name.strip()
+        if not sn:
+            raise HTTPException(400,'第 %d 步请填写步骤名称'%i)
+        if len(sn)>100:
+            raise HTTPException(400,'第 %d 步名称不能超过 100 字'%i)
+        if st.binding_id in seen:
+            raise HTTPException(400,'第 %d 步与其他步骤选择了相同指标，请分别选择不同指标'%i)
+        seen.add(st.binding_id)
+        c.execute('SELECT b.project_id,b.archived_at,m.is_enabled,m.archived_at AS metric_archived '
+                  'FROM metric_binding b JOIN metric m ON m.id=b.metric_id WHERE b.id=%s',(st.binding_id,))
+        b=c.fetchone()
+        if not b or b['project_id']!=data.project_id or b['archived_at'] is not None:
+            raise HTTPException(400,'第 %d 步所选指标不适用于当前项目'%i)
+        if not b['is_enabled'] or b['metric_archived'] is not None:
+            raise HTTPException(400,'第 %d 步所选指标已停用，请重新选择'%i)
+    return name,name_key
+
+def _replace_funnel_steps(c,funnel_id,project_id,steps,user_id):
+    c.execute('DELETE FROM funnel_step WHERE funnel_id=%s',(funnel_id,))
+    for pos,st in enumerate(steps,1):
+        c.execute('INSERT INTO funnel_step(funnel_id,project_id,step_name,binding_id,position) '
+                  'VALUES(%s,%s,%s,%s,%s)',(funnel_id,project_id,st.step_name.strip(),st.binding_id,pos))
+
+@app.get(BASE+'/api/funnels')
+def list_funnels(request:Request):
+    user=actor(request)
+    check_permission(user,'funnel.view')
+    can_create=True
+    can_edit=True
+    try:
+        check_permission(user,'funnel.create')
+    except HTTPException:
+        can_create=False
+    try:
+        check_permission(user,'funnel.edit')
+    except HTTPException:
+        can_edit=False
+    with database() as c:
+        if user['is_super']:
+            c.execute('SELECT f.id,f.project_id,f.name,f.is_enabled,f.display_order,p.name AS project_name '
+                      'FROM funnel f JOIN project p ON p.id=f.project_id '
+                      'ORDER BY p.display_order,f.display_order,f.id')
+        else:
+            c.execute('SELECT f.id,f.project_id,f.name,f.is_enabled,f.display_order,p.name AS project_name '
+                      'FROM funnel f JOIN project p ON p.id=f.project_id '
+                      'JOIN sys_role_project rp ON rp.project_id=f.project_id AND rp.role_id IN ('
+                      'SELECT role_id FROM sys_user_role WHERE user_id=%s) '
+                      'GROUP BY f.id,f.project_id,f.name,f.is_enabled,f.display_order,p.name,p.display_order '
+                      'ORDER BY p.display_order,f.display_order,f.id',(user['id'],))
+        funnels=c.fetchall()
+        c.execute('SELECT s.funnel_id,s.id,s.step_name,s.binding_id,s.position,b.metric_id,b.feature_id,'
+                  'm.name AS metric_name,m.code AS metric_code,m.unit,pf.name AS feature_name '
+                  'FROM funnel_step s '
+                  'JOIN metric_binding b ON b.id=s.binding_id '
+                  'JOIN metric m ON m.id=b.metric_id '
+                  'LEFT JOIN project_feature pf ON pf.id=b.feature_id '
+                  'ORDER BY s.funnel_id,s.position,s.id')
+        steps=c.fetchall()
+        for f in funnels:
+            f['steps']=[{'id':st['id'],'step_name':st['step_name'],'binding_id':st['binding_id'],
+                         'position':st['position'],'metric_name':st['metric_name'],
+                         'metric_code':st['metric_code'],'unit':st['unit'],'feature_name':st['feature_name']}
+                        for st in steps if st['funnel_id']==f['id']]
+        # 可选项：项目内启用指标对应的有效数据项（项目级或功能级）
+        c.execute('SELECT b.id AS binding_id,b.project_id,b.metric_id,b.feature_id,'
+                  'm.name AS metric_name,m.code AS metric_code,m.unit,pf.name AS feature_name,'
+                  'p.display_order AS project_order,m.display_order AS metric_order '
+                  'FROM metric_binding b '
+                  'JOIN metric m ON m.id=b.metric_id AND m.is_enabled=1 AND m.archived_at IS NULL '
+                  'JOIN project p ON p.id=b.project_id '
+                  'LEFT JOIN project_feature pf ON pf.id=b.feature_id AND pf.archived_at IS NULL '
+                  'WHERE b.archived_at IS NULL '
+                  'ORDER BY p.display_order,m.display_order,m.id,b.id')
+        options=c.fetchall()
+        c.execute('SELECT id,name,is_enabled FROM project ORDER BY display_order,id')
+        projects=c.fetchall()
+    return {'items':funnels,'options':options,
+            'projects':[{'id':p['id'],'name':p['name'],'is_enabled':bool(p['is_enabled'])} for p in projects],
+            'can_create':can_create,'can_edit':can_edit}
+
+@app.post(BASE+'/api/funnels')
+def create_funnel(data:FunnelPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'funnel.create')
+    mutation(request)
+    with database() as c:
+        name,name_key=_validate_funnel(c,data)
+        c.execute('SELECT COALESCE(MAX(display_order),0)+1 AS next FROM funnel WHERE project_id=%s',(data.project_id,))
+        display_order=c.fetchone()['next']
+        c.execute('INSERT INTO funnel(project_id,name,name_key,is_enabled,display_order,created_by,updated_by) '
+                  'VALUES(%s,%s,%s,1,%s,%s,%s)',(data.project_id,name,name_key,display_order,user['id'],user['id']))
+        funnel_id=c.lastrowid
+        _replace_funnel_steps(c,funnel_id,data.project_id,data.steps,user['id'])
+        audit(c,user['id'],'funnel.create','funnel',funnel_id,None,
+              {'name':name,'project_id':data.project_id,'steps':len(data.steps)})
+    return {'ok':True,'id':funnel_id}
+
+@app.put(BASE+'/api/funnels/{funnel_id}')
+def update_funnel(funnel_id:int,data:FunnelPayload,request:Request):
+    user=actor(request)
+    check_permission(user,'funnel.edit')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,project_id,name,is_enabled,row_version FROM funnel WHERE id=%s FOR UPDATE',(funnel_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'漏斗不存在')
+        name,name_key=_validate_funnel(c,data,funnel_id)
+        c.execute('UPDATE funnel SET project_id=%s,name=%s,name_key=%s,updated_by=%s,'
+                  'row_version=row_version+1,updated_at=UTC_TIMESTAMP(6) WHERE id=%s',
+                  (data.project_id,name,name_key,user['id'],funnel_id))
+        _replace_funnel_steps(c,funnel_id,data.project_id,data.steps,user['id'])
+        audit(c,user['id'],'funnel.update','funnel',funnel_id,
+              {'name':row['name'],'project_id':row['project_id']},
+              {'name':name,'project_id':data.project_id,'steps':len(data.steps)})
+    return {'ok':True,'id':funnel_id}
+
+@app.patch(BASE+'/api/funnels/{funnel_id}/enabled')
+def switch_funnel(funnel_id:int,data:FunnelSwitch,request:Request):
+    user=actor(request)
+    check_permission(user,'funnel.enable' if data.enabled else 'funnel.disable')
+    mutation(request)
+    with database() as c:
+        c.execute('SELECT id,name,is_enabled,row_version FROM funnel WHERE id=%s FOR UPDATE',(funnel_id,))
+        row=c.fetchone()
+        if not row:
+            raise HTTPException(404,'漏斗不存在')
+        if bool(row['is_enabled'])==data.enabled:
+            return {'ok':True}
+        c.execute('UPDATE funnel SET is_enabled=%s,updated_by=%s,row_version=row_version+1,'
+                  'updated_at=UTC_TIMESTAMP(6) WHERE id=%s',(1 if data.enabled else 0,user['id'],funnel_id))
+        audit(c,user['id'],'funnel.enable' if data.enabled else 'funnel.disable','funnel',funnel_id,
+              {'name':row['name'],'is_enabled':bool(row['is_enabled'])},{'is_enabled':data.enabled})
+    return {'ok':True}
+
 @app.get(BASE+'/login')
 def login_page():
     return FileResponse(ROOT/'static/login.html')
@@ -1240,6 +1408,8 @@ def protected_page(request:Request):
             check_permission(user,'user.view')
         elif request.url.path.endswith('/settings/metrics'):
             check_permission(user,'metric.view')
+        elif request.url.path.endswith('/settings/funnels'):
+            check_permission(user,'funnel.view')
     except HTTPException as e:
         if e.status_code==401:
             return RedirectResponse(BASE+'/login',status_code=303)

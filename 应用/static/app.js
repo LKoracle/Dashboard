@@ -1,6 +1,6 @@
 'use strict';
 const base='/dashboard',content=document.querySelector('#content');
-let user,items=[],canEdit=false,pending=null,listPages={menus:{page:1,size:10,total:0},roles:{page:1,size:10,total:0},projects:{page:1,size:10,total:0},users:{page:1,size:10,total:0},metrics:{page:1,size:10,total:0}};
+let user,items=[],canEdit=false,pending=null,listPages={menus:{page:1,size:10,total:0},roles:{page:1,size:10,total:0},projects:{page:1,size:10,total:0},users:{page:1,size:10,total:0},metrics:{page:1,size:10,total:0},funnels:{page:1,size:10,total:0}};
 let roles=[],rolesCanEdit=false,roleMeta=null,editingRoleId=null;
 let projects=[],projectsCanEdit=false,editingProjectId=null;
 let users=[],userRoleOptions=[],usersCanEdit=false,usersCanCreate=false,usersCanReset=false,editingUserId=null,roleDropdownOpen=false,selectedRoleIds=[];
@@ -11,8 +11,8 @@ const ICONS={plus:ic('<path d="M12 5v14M5 12h14"/>'),edit:ic('<path d="M12 20h9M
 async function api(path,options={}){const response=await fetch(base+'/api'+path,{...options,headers:{'Content-Type':'application/json',...(user?{'X-CSRF-Token':user.csrf_token}:{}),...options.headers}});if(response.status===401){location.replace(base+'/login');throw Error('请重新登录');}const data=await response.json();if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'操作失败，请稍后重试');return data;}
 function notify(message){const n=document.querySelector('#toast');n.textContent=message;n.hidden=false;setTimeout(()=>n.hidden=true,3500);}
 function enabled(row){const seen=new Set();while(row){if(!row.is_enabled||seen.has(row.id))return false;seen.add(row.id);row=items.find(m=>m.id===row.parent_id);}return true;}
-function currentPageKey(){if(location.pathname.endsWith('/maintain'))return 'maintain';if(location.pathname.endsWith('/settings/roles'))return 'roles';if(location.pathname.endsWith('/settings/projects'))return 'projects';if(location.pathname.endsWith('/settings/users'))return 'users';if(location.pathname.endsWith('/settings/metrics'))return 'metrics';return 'menus';}
-const SIDEBAR_ROUTES={project:'/settings/projects',menu:'/settings/menus',role:'/settings/roles',user:'/settings/users',metric:'/settings/metrics'};
+function currentPageKey(){if(location.pathname.endsWith('/maintain'))return 'maintain';if(location.pathname.endsWith('/settings/roles'))return 'roles';if(location.pathname.endsWith('/settings/projects'))return 'projects';if(location.pathname.endsWith('/settings/users'))return 'users';if(location.pathname.endsWith('/settings/metrics'))return 'metrics';if(location.pathname.endsWith('/settings/funnels'))return 'funnel';return 'menus';}
+const SIDEBAR_ROUTES={project:'/settings/projects',menu:'/settings/menus',role:'/settings/roles',user:'/settings/users',metric:'/settings/metrics',funnel:'/settings/funnels'};
 function navigation(){const settings=location.pathname.includes('/settings/');const maintain=location.pathname.endsWith('/maintain');document.querySelector('#sidebar').hidden=!settings;content.classList.toggle('with-sidebar',settings);const savebar=document.querySelector('#savebar');if(savebar)savebar.hidden=!maintain;const TOP_ROUTES={'首页':'/','数据维护':'/maintain','设置管理':'/settings/menus'};const top=document.querySelector('#topNav');top.replaceChildren();for(const name of ['首页','数据维护','设置管理']){const row=items.find(m=>m.name===name);const available=row&&enabled(row);const n=el(available?'a':'span',name,(name==='设置管理'&&settings||name==='首页'&&!settings&&!maintain||name==='数据维护'&&maintain)?'active':'');if(n.tagName==='A')n.href=base+TOP_ROUTES[name];else{n.classList.add('nav-disabled');n.title=available?'功能建设中':'菜单已停用';}top.append(n);}const nav=document.querySelector('#sideNav');nav.replaceChildren();const activeCode=currentPageKey();const permChildren=['menu','roles','users'];const permActive=permChildren.includes(activeCode);for(const row of items.filter(m=>m.parent_id!==null)){const route=SIDEBAR_ROUTES[row.code];let linkable=!!route&&enabled(row);let cls='side-item'+((linkable&&row.code===activeCode)?' active':'');let href=base+route;if(row.code==='permission'){cls+=' perm-parent'+(permActive?' parent-active':'');linkable=enabled(row)&&permChildren.some(c=>SIDEBAR_ROUTES[c]&&items.some(m=>m.code===c&&enabled(m)));href=base+'/settings/menus';}else if(row.parent_id===items.find(m=>m.code==='permission')?.id){cls+=' child';}const n=el(linkable?'a':'span',row.name,cls);if(linkable)n.href=href;else{n.classList.add('nav-disabled');n.title=!enabled(row)?'菜单已停用':'功能建设中';}nav.append(n);}if(user.is_super){const recovery=el('p','超级管理员保留权限配置入口，可恢复已停用的菜单。','admin-note');nav.append(recovery);}}
 function level(row){let result=1,seen=new Set();while(row.parent_id!==null&&!seen.has(row.id)){seen.add(row.id);row=items.find(m=>m.id===row.parent_id);if(!row)break;result++;}return result;}
 function renderMenus(){content.replaceChildren();const crumb=el('p','设置管理 / 权限配置 / 菜单管理','breadcrumb');content.append(crumb);const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');titleRow.append(el('h1','菜单管理'),el('p','管理系统菜单层级、操作权限与启停状态。','subtitle'));heading.append(titleRow);content.append(heading);const card=el('section',undefined,'card');card.append(el('p',`共 ${items.length} 个菜单`,'table-count'));const wrap=el('div',undefined,'table-wrap'),table=el('table');table.setAttribute('aria-label','菜单管理');const head=el('thead'),tr=el('tr');['菜单','层级','上级菜单','操作权限','状态','操作'].forEach(t=>tr.append(el('th',t)));head.append(tr);table.append(head);const body=el('tbody');for(const row of pagedList('menus',items)){const r=el('tr');const name=el('td',row.name,'menu-name level-'+level(row));name.dataset.level=level(row);r.append(name,el('td',`${level(row)} 级`),el('td',items.find(m=>m.id===row.parent_id)?.name||'—'));const permissions=el('td'),chips=el('div',undefined,'chips');row.permissions.forEach(p=>chips.append(el('span',p,'chip')));permissions.append(chips);if(!row.permissions.length)permissions.textContent='—';r.append(permissions);const status=el('td');status.append(el('span',row.is_enabled?'启用':'停用','status '+(row.is_enabled?'enabled':'disabled')));r.append(status);const action=el('td'),button=el('button',undefined,'icon-btn'+(row.is_enabled?'':' play-green'));button.type='button';button.innerHTML=row.is_enabled?ICONS.pause:ICONS.play;button.title=row.is_enabled?'停用':'启用';button.setAttribute('aria-label',(row.is_enabled?'停用':'启用')+'菜单'+row.name);button.disabled=!canEdit;button.addEventListener('click',()=>confirmMenuChange(row));action.append(button);r.append(action);body.append(r);}table.append(body);wrap.append(table);card.append(wrap);content.append(card);content.append(buildPager('menus','菜单'));}
@@ -27,8 +27,8 @@ function confirmMenuChange(row){pending=row;const action=row.is_enabled?'停用'
 function confirmRoleChange(row){pending=row;const action=row.is_enabled?'停用':'启用';document.querySelector('#confirmTitle').textContent=action+'角色';document.querySelector('#confirmText').textContent=`确认${action}“${row.name}”？`+(row.is_enabled?'该角色将不再参与授权，相关用户相应权限失效。':'该角色将恢复可用。');document.querySelector('#confirmChange').textContent='确认'+action;document.querySelector('#confirmDialog').showModal();}
 function confirmRoleDelete(row){pending=row;document.querySelector('#confirmTitle').textContent='删除角色';document.querySelector('#confirmText').textContent=`确认删除角色“${row.name}”？此操作不可撤销。`;document.querySelector('#confirmChange').textContent='确认删除';document.querySelector('#confirmDialog').showModal();}
 document.querySelector('#cancelChange').addEventListener('click',()=>document.querySelector('#confirmDialog').close());
-document.querySelector('#confirmChange').addEventListener('click',async e=>{const row=pending;if(!row)return;const btn=e.currentTarget;const key=currentPageKey();const path=key==='roles'?'/roles/':(key==='projects'?'/projects/':(key==='users'?'/users/':(key==='metrics'?'/metrics/':'/menus/')));const title=document.querySelector('#confirmTitle').textContent;const isDelete=title==='删除角色';const isReset=title==='重置密码';btn.disabled=true;try{if(isDelete){await api(path+row.id,{method:'DELETE'});notify('角色已删除');}else if(isReset){await api(path+row.id+'/reset-password',{method:'POST'});notify('密码已重置为系统初始密码');}else{await api(path+row.id,{method:'PATCH',body:JSON.stringify({is_enabled:!row.is_enabled,row_version:row.row_version})});notify(key==='projects'?'项目状态已更新':(key==='roles'?'角色状态已更新':(key==='users'?'用户状态已更新':(key==='metrics'?'指标状态已更新':'菜单状态已更新'))));}document.querySelector('#confirmDialog').close();}catch(ex){document.querySelector('#confirmDialog').close();notify(ex.message);}finally{btn.disabled=false;load().catch(ex=>notify(ex.message));}});
-function render(){for(const id of ['confirmDialog','roleDialog','projectDialog','userDialog','metricDialog']){const d=document.querySelector('#'+id);if(d&&d.open)d.close();}navigation();const key=currentPageKey();if(key==='roles'){renderRoles();}else if(key==='projects'){renderProjects();}else if(key==='users'){renderUsers();}else if(key==='metrics'){renderMetrics();}else if(key==='maintain'){renderMaintain();}else{renderMenus();}}
+document.querySelector('#confirmChange').addEventListener('click',async e=>{const row=pending;if(!row)return;const btn=e.currentTarget;const key=currentPageKey();const path=key==='roles'?'/roles/':(key==='projects'?'/projects/':(key==='users'?'/users/':(key==='metrics'?'/metrics/':(key==='funnel'?'/funnels/':'/menus/'))));const title=document.querySelector('#confirmTitle').textContent;const isDelete=title==='删除角色';const isReset=title==='重置密码';btn.disabled=true;try{if(isDelete){await api(path+row.id,{method:'DELETE'});notify('角色已删除');}else if(isReset){await api(path+row.id+'/reset-password',{method:'POST'});notify('密码已重置为系统初始密码');}else if(key==='funnel'){await api('/funnels/'+row.id+'/enabled',{method:'PATCH',body:JSON.stringify({enabled:!row.is_enabled})});notify('漏斗状态已更新');}else{await api(path+row.id,{method:'PATCH',body:JSON.stringify({is_enabled:!row.is_enabled,row_version:row.row_version})});notify(key==='projects'?'项目状态已更新':(key==='roles'?'角色状态已更新':(key==='users'?'用户状态已更新':(key==='metrics'?'指标状态已更新':'菜单状态已更新'))));}document.querySelector('#confirmDialog').close();}catch(ex){document.querySelector('#confirmDialog').close();notify(ex.message);}finally{btn.disabled=false;load().catch(ex=>notify(ex.message));}});
+function render(){for(const id of ['confirmDialog','roleDialog','projectDialog','userDialog','metricDialog']){const d=document.querySelector('#'+id);if(d&&d.open)d.close();}navigation();const key=currentPageKey();if(key==='roles'){renderRoles();}else if(key==='projects'){renderProjects();}else if(key==='users'){renderUsers();}else if(key==='metrics'){renderMetrics();}else if(key==='maintain'){renderMaintain();}else if(key==='funnel'){funnelEdit?renderFunnelEditor():renderFunnels();}else{renderMenus();}}
 function renderProjects(){content.replaceChildren();const crumb=el('p','设置管理 / 项目管理','breadcrumb');content.append(crumb);const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');titleRow.append(el('h1','项目管理'),el('p','维护系统中的项目、启停状态、首页展示顺序与功能清单。','subtitle'));heading.append(titleRow);content.append(heading);const card=el('section',undefined,'card');const toolbar=el('div',undefined,'toolbar');toolbar.append(el('span',`共 ${projects.length} 个项目`,'count'),el('span',undefined,'spacer'));const addBtn=el('button',undefined,'primary');addBtn.innerHTML=ICONS.plus+'新增项目';addBtn.disabled=!projectsCanEdit;addBtn.addEventListener('click',()=>openProjectForm(null));toolbar.append(addBtn);card.append(toolbar);const wrap=el('div',undefined,'table-wrap'),table=el('table');table.setAttribute('aria-label','项目管理');const head=el('thead'),tr=el('tr');['首页顺序','项目名称','功能清单','状态','操作'].forEach(t=>tr.append(el('th',t)));head.append(tr);table.append(head);const body=el('tbody');if(!projects.length){const empty=el('tr'),td=el('td','暂无项目，点击右上角「新增项目」创建。');td.colSpan=5;td.style.textAlign='center';td.style.color='#7c8ba1';td.style.padding='40px';empty.append(td);body.append(empty);}for(const row of pagedList('projects',projects)){const r=el('tr');const orderTd=el('td'),orderBox=el('div',undefined,'order-btns');orderBox.append(el('span',String(row.display_order),'order-num'));const upBtn=el('button',undefined,'icon-btn');upBtn.innerHTML=ICONS.up;upBtn.title='上移';upBtn.disabled=!projectsCanEdit;upBtn.addEventListener('click',()=>moveProject(row,'up'));const downBtn=el('button',undefined,'icon-btn');downBtn.innerHTML=ICONS.down;downBtn.title='下移';downBtn.disabled=!projectsCanEdit;downBtn.addEventListener('click',()=>moveProject(row,'down'));orderBox.append(upBtn,downBtn);orderTd.append(orderBox);r.append(orderTd);const nameTd=el('td',undefined,'menu-name');nameTd.append(el('strong',row.name));r.append(nameTd);const fnTd=el('td'),fnList=el('div',undefined,'func-list');row.features.forEach(f=>fnList.append(el('span',f,'fchip')));fnTd.append(fnList);if(!row.features.length){fnTd.textContent='—';fnTd.style.color='#94a3b8';fnTd.style.fontSize='12px';}r.append(fnTd);const status=el('td');status.append(el('span',row.is_enabled?'启用':'停用','status '+(row.is_enabled?'enabled':'disabled')));r.append(status);const action=el('td'),actBox=el('div',undefined,'order-btns');const editBtn=el('button',undefined,'icon-btn');editBtn.innerHTML=ICONS.edit;editBtn.title='编辑';editBtn.disabled=!projectsCanEdit;editBtn.addEventListener('click',()=>openProjectForm(row));const toggleBtn=el('button',undefined,'icon-btn');if(row.is_enabled){toggleBtn.innerHTML=ICONS.pause;toggleBtn.title='停用';}else{toggleBtn.innerHTML=ICONS.play;toggleBtn.title='启用';toggleBtn.classList.add('play-green');}toggleBtn.disabled=!projectsCanEdit;toggleBtn.addEventListener('click',()=>confirmProjectToggle(row));actBox.append(editBtn,toggleBtn);action.append(actBox);r.append(action);body.append(r);}table.append(body);wrap.append(table);card.append(wrap);content.append(card);content.append(buildPager('projects','项目'));}
 function confirmProjectToggle(row){pending=row;const action=row.is_enabled?'停用':'启用';document.querySelector('#confirmTitle').textContent=action+'项目';document.querySelector('#confirmText').textContent=`确认${action}“${row.name}”？`+(row.is_enabled?'停用后该项目将从首页展示中移除，相关指标与功能暂不可用。':'该项目将恢复可用。');document.querySelector('#confirmChange').textContent='确认'+action;document.querySelector('#confirmDialog').showModal();}
 async function moveProject(row,dir){if(!projectsCanEdit)return;try{await api(`/projects/${row.id}/move`,{method:'PATCH',body:JSON.stringify({direction:dir,row_version:row.row_version})});await load();}catch(ex){notify(ex.message);await load();}}
@@ -45,7 +45,7 @@ document.querySelector('#roleEnabled').addEventListener('click',()=>{const sw=do
 document.querySelector('#roleCancel').addEventListener('click',()=>document.querySelector('#roleDialog').close());
 document.querySelector('#roleClose').addEventListener('click',()=>document.querySelector('#roleDialog').close());
 document.querySelector('#roleSave').addEventListener('click',async e=>{const data=collectRoleForm();if(!data.name){document.querySelector('#roleNameErr').hidden=false;document.querySelector('#roleName').focus();return;}const btn=e.currentTarget;btn.disabled=true;let saved=false;try{if(editingRoleId){await api('/roles/'+editingRoleId,{method:'PUT',body:JSON.stringify(data)});notify('角色已保存');}else{await api('/roles',{method:'POST',body:JSON.stringify(data)});notify('角色已创建');}saved=true;document.querySelector('#roleDialog').close();}catch(ex){notify(ex.message);}finally{btn.disabled=false;if(saved)load().catch(ex=>notify(ex.message));}});
-async function load(){const data=await api('/menus');items=data.items;canEdit=data.can_edit;if(location.pathname.includes('/settings/')){const key=currentPageKey();if(key==='roles'){try{const rd=await api('/roles');roles=rd.items;rolesCanEdit=rd.can_edit;}catch(ex){roles=[];rolesCanEdit=false;}}else if(key==='projects'){try{const pd=await api('/projects');projects=pd.items;projectsCanEdit=pd.can_edit;}catch(ex){projects=[];projectsCanEdit=false;}}else if(key==='users'){try{const ud=await api('/users');users=ud.items;userRoleOptions=ud.roles;usersCanEdit=ud.can_edit;usersCanCreate=ud.can_create;usersCanReset=ud.can_reset;}catch(ex){users=[];userRoleOptions=[];usersCanEdit=usersCanCreate=usersCanReset=false;}}else if(key==='metrics'){try{const md=await api('/metrics');metrics=md.items;metricCategories=md.categories;metricProjects=md.projects;metricsCanEdit=md.can_edit;metricsCanCreate=md.can_create;}catch(ex){metrics=[];metricCategories=[];metricProjects=[];metricsCanEdit=metricsCanCreate=false;}}render();}else if(location.pathname.endsWith('/maintain')){await loadMaintain();render();}else{navigation();content.replaceChildren(el('p','首页','breadcrumb'),el('h1','项目运行概览'),el('section',undefined,'card empty'));const empty=content.querySelector('.empty');empty.append(el('h2','暂无指标数据'),el('p','登录与权限配置已开放，项目看板将在接入指标数据后展示。'));const link=el('a','进入菜单管理','primary link-button');link.href=base+'/settings/menus';empty.append(link);}}
+async function load(){const data=await api('/menus');items=data.items;canEdit=data.can_edit;if(location.pathname.includes('/settings/')){const key=currentPageKey();if(key==='roles'){try{const rd=await api('/roles');roles=rd.items;rolesCanEdit=rd.can_edit;}catch(ex){roles=[];rolesCanEdit=false;}}else if(key==='projects'){try{const pd=await api('/projects');projects=pd.items;projectsCanEdit=pd.can_edit;}catch(ex){projects=[];projectsCanEdit=false;}}else if(key==='users'){try{const ud=await api('/users');users=ud.items;userRoleOptions=ud.roles;usersCanEdit=ud.can_edit;usersCanCreate=ud.can_create;usersCanReset=ud.can_reset;}catch(ex){users=[];userRoleOptions=[];usersCanEdit=usersCanCreate=usersCanReset=false;}}else if(key==='metrics'){try{const md=await api('/metrics');metrics=md.items;metricCategories=md.categories;metricProjects=md.projects;metricsCanEdit=md.can_edit;metricsCanCreate=md.can_create;}catch(ex){metrics=[];metricCategories=[];metricProjects=[];metricsCanEdit=metricsCanCreate=false;}}else if(key==='funnel'){try{const fd=await api('/funnels');funnels=fd.items;funnelOptions=fd.options;funnelProjects=fd.projects;funnelsCanCreate=fd.can_create;funnelsCanEdit=fd.can_edit;}catch(ex){funnels=[];funnelOptions=[];funnelProjects=[];funnelsCanCreate=funnelsCanEdit=false;notify(ex.message);}}render();}else if(location.pathname.endsWith('/maintain')){await loadMaintain();render();}else{navigation();content.replaceChildren(el('p','首页','breadcrumb'),el('h1','项目运行概览'),el('section',undefined,'card empty'));const empty=content.querySelector('.empty');empty.append(el('h2','暂无指标数据'),el('p','登录与权限配置已开放，项目看板将在接入指标数据后展示。'));const link=el('a','进入菜单管理','primary link-button');link.href=base+'/settings/menus';empty.append(link);}}
 (async()=>{try{user=await api('/me');document.querySelector('#accountName').textContent=user.display_name+(user.is_super?' · 超级管理员':'');await load();}catch(ex){content.replaceChildren(el('p',ex.message,'form-error'));}})();
 document.querySelector('#logout').addEventListener('click',async()=>{try{await api('/logout',{method:'POST'});location.replace(base+'/login');}catch(ex){notify(ex.message);}});
 document.querySelector('#projectCancel').addEventListener('click',()=>document.querySelector('#projectDialog').close());
@@ -205,3 +205,191 @@ function renderMaintain(){content.replaceChildren();
  content.append(grid);
  updateSavebar();}
 document.querySelector('#saveMaintainBtn').addEventListener('click',saveMaintain);
+
+// ==================== 漏斗管理 ====================
+let funnels=[],funnelOptions=[],funnelProjects=[],funnelsCanCreate=false,funnelsCanEdit=false;
+let funnelEdit=null,funnelDragIndex=null;
+function funnelOptionsFor(project){return funnelOptions.filter(o=>String(o.project_id)===project);}
+function renderFunnels(){content.replaceChildren();
+ content.append(el('p','设置管理 / 漏斗管理','breadcrumb'));
+ const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
+ titleRow.append(el('h1','漏斗管理'),el('p','配置各项目的功能漏斗名称与步骤，首页按此展示漏斗转化。','subtitle'));
+ heading.append(titleRow);
+ const addBtn=el('button',undefined,'primary');addBtn.innerHTML=ICONS.plus+'新增漏斗';addBtn.disabled=!funnelsCanCreate;
+ addBtn.addEventListener('click',()=>openFunnelEditor(null));heading.append(addBtn);
+ content.append(heading);
+ const card=el('section',undefined,'card');
+ const wrap=el('div',undefined,'table-wrap'),table=el('table');table.setAttribute('aria-label','漏斗管理');
+ const head=el('thead'),trh=el('tr');
+ [['漏斗名称',null],['适用项目',220],['步骤数',110],['状态',110],['操作',110]].forEach(([t,w])=>{const th=el('th',t);if(w)th.style.width=w+'px';trh.append(th);});
+ head.append(trh);table.append(head);
+ const body=el('tbody');
+ if(!funnels.length){const empty=el('tr');const td=el('td','暂无漏斗，点击右上角「新增漏斗」创建。');td.colSpan=5;td.style.textAlign='center';td.style.color='#7c8ba1';td.style.padding='40px';empty.append(td);body.append(empty);}
+ for(const row of pagedList('funnels',funnels)){const r=el('tr');
+  const nameTd=el('td');nameTd.append(el('strong',row.name));r.append(nameTd);
+  r.append(el('td',row.project_name||'—'));
+  r.append(el('td',String(row.steps.length)));
+  const status=el('td');status.append(el('span',row.is_enabled?'启用':'停用','status '+(row.is_enabled?'enabled':'disabled')));r.append(status);
+  const action=el('td'),actBox=el('div',undefined,'order-btns');
+  const editBtn=el('button',undefined,'icon-btn');editBtn.innerHTML=ICONS.edit;editBtn.title='编辑';editBtn.setAttribute('aria-label','编辑漏斗'+row.name);editBtn.disabled=!funnelsCanEdit;
+  editBtn.addEventListener('click',()=>openFunnelEditor(row));
+  const toggleBtn=el('button',undefined,'icon-btn'+(row.is_enabled?'':' play-green'));toggleBtn.innerHTML=row.is_enabled?ICONS.pause:ICONS.play;
+  toggleBtn.title=row.is_enabled?'停用':'启用';toggleBtn.setAttribute('aria-label',(row.is_enabled?'停用':'启用')+'漏斗'+row.name);
+  toggleBtn.addEventListener('click',()=>confirmFunnelChange(row));
+  actBox.append(editBtn,toggleBtn);action.append(actBox);r.append(action);
+  body.append(r);}
+ table.append(body);wrap.append(table);card.append(wrap);content.append(card);
+ content.append(buildPager('funnels','漏斗'));}
+function confirmFunnelChange(row){pending=row;const action=row.is_enabled?'停用':'启用';
+ document.querySelector('#confirmTitle').textContent=action+'漏斗';
+ document.querySelector('#confirmText').textContent='确认'+action+'“'+row.name+'”？'+(row.is_enabled?'停用后首页将不再展示该漏斗。':'该漏斗将恢复在首页展示。');
+ document.querySelector('#confirmChange').textContent='确认'+action;
+ document.querySelector('#confirmDialog').showModal();}
+function openFunnelEditor(row){funnelEdit=row?{id:row.id,name:row.name,project:String(row.project_id),
+  steps:row.steps.map(s=>({name:s.step_name,binding:String(s.binding_id)})),errors:{},saving:false}
+  :{id:null,name:'',project:'',steps:[],errors:{},saving:false};
+ content.replaceChildren();renderFunnelEditor();}
+function closeFunnelEditor(){funnelEdit=null;render();}
+function changeFunnelProject(project){const d=funnelEdit;if(!d||project===d.project)return;
+ d.project=project;d.steps.forEach(s=>s.binding='');d.errors={};content.replaceChildren();renderFunnelEditor();}
+function addFunnelStep(){const d=funnelEdit;if(!d||!d.project)return;d.steps.push({name:'',binding:''});
+ content.replaceChildren();renderFunnelEditor();
+ const inp=document.querySelector('#funnel-step-name-'+(d.steps.length-1));if(inp)inp.focus();}
+function removeFunnelStep(i){const d=funnelEdit;if(!d)return;d.steps.splice(i,1);d.errors={};content.replaceChildren();renderFunnelEditor();}
+function moveFunnelStep(from,to){const d=funnelEdit;if(!d||!d.project)return;
+ if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=d.steps.length||to>=d.steps.length||from===to)return;
+ const [step]=d.steps.splice(from,1);d.steps.splice(to,0,step);d.errors={};funnelDragIndex=null;
+ content.replaceChildren();renderFunnelEditor();
+ const handle=document.querySelector('#funnel-step-drag-'+to);if(handle)handle.focus();}
+function funnelStepDragHandlers(){
+ document.querySelectorAll('[data-step-drag]').forEach(handle=>{
+  handle.addEventListener('dragstart',e=>{const d=funnelEdit;if(!d.project){e.preventDefault();return;}
+   funnelDragIndex=Number(handle.dataset.stepDrag);e.dataTransfer.effectAllowed='move';
+   e.dataTransfer.setData('text/plain',String(funnelDragIndex));handle.closest('tr').classList.add('drag-source');});
+  handle.addEventListener('dragend',()=>{funnelDragIndex=null;
+   document.querySelectorAll('[data-funnel-step-row]').forEach(r=>r.classList.remove('drag-source','drop-before','drop-after'));});
+  handle.addEventListener('keydown',e=>{if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;e.preventDefault();
+   const i=Number(handle.dataset.stepDrag);moveFunnelStep(i,i+(e.key==='ArrowUp'?-1:1));});});
+ document.querySelectorAll('[data-funnel-step-row]').forEach(row=>{
+  const after=e=>e.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2;
+  row.addEventListener('dragover',e=>{if(funnelDragIndex===null)return;e.preventDefault();e.dataTransfer.dropEffect='move';
+   document.querySelectorAll('[data-funnel-step-row]').forEach(r=>r.classList.remove('drop-before','drop-after'));
+   row.classList.add(after(e)?'drop-after':'drop-before');});
+  row.addEventListener('dragleave',e=>{if(!row.contains(e.relatedTarget))row.classList.remove('drop-before','drop-after');});
+  row.addEventListener('drop',e=>{if(funnelDragIndex===null)return;e.preventDefault();
+   const from=funnelDragIndex,index=Number(row.dataset.funnelStepRow);
+   const insertion=index+(after(e)?1:0),to=insertion-(from<insertion?1:0);
+   funnelDragIndex=null;moveFunnelStep(from,to);});});}
+function renderFunnelEditor(){const d=funnelEdit;if(!d){renderFunnels();return;}
+ const title=d.id?'编辑漏斗':'新增漏斗';
+ content.replaceChildren();
+ content.append(el('p','设置管理 / 漏斗管理 / '+title,'breadcrumb'));
+ const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
+ titleRow.append(el('h1',title),el('p','配置漏斗名称、适用项目和步骤指标。','subtitle'));
+ const backBtn=el('button',undefined,'secondary');backBtn.textContent='返回列表';
+ backBtn.addEventListener('click',closeFunnelEditor);
+ heading.append(titleRow,backBtn);content.append(heading);
+ const opts=d.project?funnelOptionsFor(d.project):[];
+ // 基本信息
+ const card1=el('section',undefined,'card funnel-panel');
+ const grid=el('div',undefined,'funnel-grid2');
+ const nameField=el('div',undefined,'funnel-field'+(d.errors.name?' invalid':''));
+ const nameLabel=el('label',undefined,'funnel-field-label');nameLabel.htmlFor='funnelName';
+ nameLabel.append(el('span','*','req'),el('span','漏斗名称'));nameField.append(nameLabel);
+ const nameInput=document.createElement('input');nameInput.id='funnelName';nameInput.type='text';
+ nameInput.value=d.name;nameInput.placeholder='请输入漏斗名称';nameInput.maxLength=100;
+ nameInput.addEventListener('input',()=>{d.name=nameInput.value;});
+ nameField.append(nameInput);
+ if(d.errors.name)nameField.append(el('div',d.errors.name,'funnel-field-error'));
+ grid.append(nameField);
+ const projField=el('div',undefined,'funnel-field'+(d.errors.project?' invalid':''));
+ const projLabel=el('label',undefined,'funnel-field-label');projLabel.htmlFor='funnelProject';
+ projLabel.append(el('span','*','req'),el('span','适用项目'));projField.append(projLabel);
+ const projSel=document.createElement('select');projSel.id='funnelProject';
+ const defOpt=document.createElement('option');defOpt.value='';defOpt.textContent='请选择适用项目';projSel.append(defOpt);
+ for(const p of funnelProjects){const o=document.createElement('option');o.value=String(p.id);
+  o.textContent=p.name+(p.is_enabled?'':'（已停用）');if(String(p.id)===d.project)o.selected=true;projSel.append(o);}
+ projSel.addEventListener('change',()=>changeFunnelProject(projSel.value));
+ projField.append(projSel);
+ if(d.errors.project)projField.append(el('div',d.errors.project,'funnel-field-error'));
+ grid.append(projField);card1.append(grid);content.append(card1);
+ // 漏斗步骤
+ const card2=el('section',undefined,'card funnel-panel');
+ const toolbar=el('div',undefined,'funnel-editor-toolbar');
+ toolbar.append(el('h2','漏斗步骤'));
+ const addStepBtn=el('button',undefined,'secondary');addStepBtn.innerHTML=ICONS.plus+'添加步骤';
+ addStepBtn.disabled=!d.project;addStepBtn.addEventListener('click',addFunnelStep);
+ toolbar.append(addStepBtn);card2.append(toolbar);
+ const hint=d.project
+   ?(opts.length?'拖动步骤左侧手柄调整顺序，也可使用上下方向键；每步仅可选择当前项目已启用的指标。':'该项目暂无可选指标，请先在指标配置中维护适用指标。')
+   :'请先选择适用项目，再添加或编辑漏斗步骤。';
+ card2.append(el('p',hint,'funnel-editor-hint'));
+ if(d.errors.stages)card2.append(el('div',d.errors.stages,'funnel-field-error'));
+ if(!d.steps.length){card2.append(el('p','暂无步骤，点击「添加步骤」开始配置。','funnel-steps-empty'));}
+ else{const wrap=el('div',undefined,'table-wrap');const table=el('table',undefined,'funnel-step-table');
+  const thead=el('thead'),trh=el('tr');
+  [['步骤',100],['步骤名称',null],['选择指标',null],['操作',70]].forEach(([t,w])=>{const th=el('th',t);if(w)th.style.width=w+'px';trh.append(th);});
+  thead.append(trh);table.append(thead);
+  const tbody=el('tbody');
+  d.steps.forEach((step,i)=>{const tr=el('tr');tr.dataset.funnelStepRow=String(i);
+   const orderTd=el('td');const orderBox=el('div',undefined,'funnel-step-order');
+   const handle=el('button',undefined,'funnel-drag-handle');handle.type='button';handle.id='funnel-step-drag-'+i;
+   handle.dataset.stepDrag=String(i);handle.draggable=!!d.project;handle.title='拖动排序，也可使用上下方向键';
+   handle.setAttribute('aria-label','调整步骤 '+(i+1)+' 顺序');
+   handle.innerHTML='<svg viewBox="0 0 16 20" width="14" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="1.5"/><circle cx="11" cy="5" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="15" r="1.5"/><circle cx="11" cy="15" r="1.5"/></svg>';
+   orderBox.append(handle,el('span',String(i+1),'step-number'));orderTd.append(orderBox);tr.append(orderTd);
+   const nameTd=el('td',undefined,'funnel-step-name-cell');
+   const nameInp=document.createElement('input');nameInp.id='funnel-step-name-'+i;nameInp.type='text';
+   nameInp.value=step.name;nameInp.placeholder='请输入步骤名称';nameInp.maxLength=100;
+   nameInp.addEventListener('input',()=>{d.steps[i].name=nameInp.value;});
+   nameTd.append(nameInp);
+   if(d.errors['name'+i])nameTd.append(el('div',d.errors['name'+i],'funnel-field-error'));
+   tr.append(nameTd);
+   const metricTd=el('td',undefined,'funnel-step-metric-cell');
+   const mSel=document.createElement('select');mSel.id='funnel-step-metric-'+i;
+   const mDef=document.createElement('option');mDef.value='';
+   mDef.textContent=step.binding&&!opts.some(o=>String(o.binding_id)===step.binding)?'原指标已停用或不适用，请重新选择':'请选择指标';
+   mSel.append(mDef);
+   for(const o of opts){const op=document.createElement('option');op.value=String(o.binding_id);
+    op.textContent=o.metric_name+(o.unit?'（'+o.unit+'）':'')+' · '+o.metric_code+(o.feature_name?' · '+o.feature_name:'');
+    if(step.binding===String(o.binding_id))op.selected=true;mSel.append(op);}
+   mSel.addEventListener('change',()=>{d.steps[i].binding=mSel.value;});
+   metricTd.append(mSel);
+   if(d.errors['metric'+i])metricTd.append(el('div',d.errors['metric'+i],'funnel-field-error'));
+   tr.append(metricTd);
+   const opTd=el('td');const delBtn=el('button',undefined,'icon-btn');delBtn.innerHTML=ICONS.trash;
+   delBtn.title='删除步骤';delBtn.setAttribute('aria-label','删除步骤 '+(i+1));
+   delBtn.addEventListener('click',()=>removeFunnelStep(i));opTd.append(delBtn);tr.append(opTd);
+   tbody.append(tr);});
+  table.append(tbody);wrap.append(table);card2.append(wrap);}
+ content.append(card2);
+ // 操作区
+ const actions=el('div',undefined,'funnel-editor-actions');
+ const cancelBtn=el('button',undefined,'secondary');cancelBtn.textContent='取消';
+ cancelBtn.addEventListener('click',closeFunnelEditor);
+ const saveBtn=el('button',undefined,'primary');saveBtn.textContent='保存漏斗';saveBtn.id='saveFunnelBtn';
+ saveBtn.addEventListener('click',saveFunnel);
+ actions.append(cancelBtn,saveBtn);content.append(actions);
+ funnelStepDragHandlers();}
+function validateFunnelClient(d){const errors={};
+ if(!d.name.trim())errors.name='请填写漏斗名称';
+ if(!d.project)errors.project='请选择适用项目';
+ if(!d.steps.length)errors.stages='请至少添加一个漏斗步骤';
+ const allowed=new Set(funnelOptionsFor(d.project).map(o=>String(o.binding_id)));
+ d.steps.forEach((s,i)=>{if(!s.name.trim())errors['name'+i]='请填写步骤名称';
+  if(!allowed.has(s.binding))errors['metric'+i]='请选择适用项目内已启用的指标';});
+ return errors;}
+async function saveFunnel(){const d=funnelEdit;if(!d||d.saving)return;
+ d.errors=validateFunnelClient(d);
+ if(Object.keys(d.errors).length){content.replaceChildren();renderFunnelEditor();return;}
+ const btn=document.querySelector('#saveFunnelBtn');d.saving=true;if(btn)btn.disabled=true;
+ const payload={project_id:Number(d.project),name:d.name.trim(),
+  steps:d.steps.map(s=>({step_name:s.name.trim(),binding_id:Number(s.binding)}))};
+ let saved=false;
+ try{if(d.id)await api('/funnels/'+d.id,{method:'PUT',body:JSON.stringify(payload)});
+  else await api('/funnels',{method:'POST',body:JSON.stringify(payload)});
+  saved=true;}
+ catch(ex){d.errors={stages:ex.message};}
+ d.saving=false;if(btn)btn.disabled=false;
+ if(saved){notify('漏斗已保存');funnelEdit=null;render();load().catch(()=>{});}
+ else{content.replaceChildren();renderFunnelEditor();}}

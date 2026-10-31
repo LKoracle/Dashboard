@@ -8,7 +8,7 @@ MENUS=[
  ('settings','设置管理',None,None,[]),
  ('project','项目管理','settings',None,['查看','新增项目','编辑项目']),
  ('metric','指标管理','settings',None,['查看','新增指标','编辑指标']),
- ('funnel','漏斗配置','settings',None,['查看','新增漏斗','编辑漏斗','启用','停用']),
+ ('funnel','漏斗管理','settings',None,['查看','新增漏斗','编辑漏斗','启用','停用']),
  ('permission','权限配置','settings',None,[]),
  ('menu','菜单管理','permission','/settings/menus',['查看','编辑','新增']),
  ('role','角色管理','permission',None,['查看','编辑','新增']),
