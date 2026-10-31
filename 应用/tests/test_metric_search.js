@@ -1,0 +1,41 @@
+'use strict';
+// Run: node tests/test_metric_search.js
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8');
+const filter=source.slice(source.indexOf('function filteredMetrics(){'),source.indexOf('function renderMetricSearch(){'));
+const pager=source.slice(source.indexOf('function pagedList('),source.indexOf('function goListPage('));
+const rows=[{id:1,category_id:1,project_id:10,name:'日活跃用户数'},{id:2,category_id:2,project_id:10,name:'功能曝光人数'},{id:3,category_id:2,project_id:20,name:'功能点击人数'},{id:4,category_id:1,project_id:10,name:'DAU Rate 100%'}];
+const ctx=vm.createContext({metrics:rows,metricSearchApplied:{categoryId:'',name:''},listPages:{metrics:{page:2,size:2,total:0}}});
+vm.runInContext(filter+pager,ctx);
+const ids=()=>Array.from(vm.runInContext('filteredMetrics()',ctx),m=>m.id);
+assert.deepEqual(ids(),[1,2,3,4]);
+ctx.metricSearchApplied={categoryId:'2',name:''};assert.deepEqual(ids(),[2,3]);
+ctx.metricSearchApplied={categoryId:'',name:'人数'};assert.deepEqual(ids(),[2,3]);
+ctx.metricSearchApplied={categoryId:'2',name:'点击'};assert.deepEqual(ids(),[3]);
+// Filter the full list before pagination; page is clamped to valid results.
+assert.deepEqual(Array.from(vm.runInContext("pagedList('metrics',filteredMetrics())",ctx),m=>m.id),[3]);
+assert.equal(ctx.listPages.metrics.page,1);assert.equal(ctx.listPages.metrics.total,1);
+ctx.metricSearchApplied={categoryId:'1',name:'曝光'};assert.deepEqual(ids(),[]);
+ctx.metricSearchApplied={categoryId:'',name:'  dau  '};assert.deepEqual(ids(),[4]);
+ctx.metricSearchApplied={categoryId:'',name:'%'};assert.deepEqual(ids(),[4]);
+ctx.metricSearchApplied={categoryId:'',name:''};assert.deepEqual(ids(),[1,2,3,4]);
+ctx.metricSearchApplied={categoryId:'',projectId:'20',name:''};assert.deepEqual(ids(),[3]);
+ctx.metricSearchApplied={categoryId:'2',projectId:'10',name:'曝光'};assert.deepEqual(ids(),[2]);
+ctx.metricSearchApplied={categoryId:'2',projectId:'20',name:'曝光'};assert.deepEqual(ids(),[]);
+ctx.metricSearchApplied={categoryId:'',projectId:'',name:''};assert.deepEqual(ids(),[1,2,3,4]);
+console.log('类型、适用项目、名称模糊匹配、三条件组合、空结果、重置和分页检查通过');
+// Exercise the actual query/reset event handlers, including project selection.
+ctx.el=(tag,text,cls)=>({tag,text,cls,children:[],events:{},setAttribute(){},append(...nodes){this.children.push(...nodes);},addEventListener(name,fn){this.events[name]=fn;}});
+ctx.metricCategories=[{id:1,name:'活跃'},{id:2,name:'漏斗指标'}];
+ctx.metricProjects=[{id:10,name:'寿险（外勤）'},{id:20,name:'寿险（内勤）'}];
+ctx.metricSearchDraft={categoryId:'',projectId:'',name:''};ctx.render=()=>{};
+vm.runInContext(source.slice(source.indexOf('function renderMetricSearch(){'),source.indexOf('function renderMetrics(){')),ctx);
+const form=vm.runInContext('renderMetricSearch()',ctx);
+const elements=[];const visit=n=>{elements.push(n);n.children.forEach(visit);};visit(form);
+const find=id=>elements.find(e=>e.id===id);
+find('metricSearchCategory').value='2';find('metricSearchProject').value='20';find('metricSearchName').value=' 点击 ';
+ctx.listPages.metrics.page=3;form.events.submit({preventDefault(){}});
+assert.deepEqual(ids(),[3]);assert.equal(ctx.listPages.metrics.page,1);
+elements.find(e=>e.text==='重置').events.click();assert.deepEqual(ids(),[1,2,3,4]);
+assert.equal(ctx.metricSearchDraft.projectId,'');assert.equal(ctx.metricSearchApplied.projectId,'');
+console.log('查询及重置按钮事件检查通过');
