@@ -71,3 +71,14 @@ IP 证书为短期证书，必须保持定时续期、Docker 网关以及 HTTP 8
 - 当前维护表的留存 `stat_date` 为基准日；首页转换为 D+7 观察日，观察日未结束不展示完整留存。首页不将累计快照跨日求和。
 - 上线前需按 `部署/mysql/grants_app.sql` 补充 funnel、funnel_step、metric_binding 的 SELECT 权限；自动拉取部署不会执行 SQL。
 - 本地验收：`tests/test_home.py` 与 `tests/test_security.py` 共 13 项通过；浏览器验证日期联动、项目切换、空数据和图表布局。临时验收数据及认证替身均未纳入应用或仓库。
+
+
+## Excel 批量导入（2026-10-31）
+
+- `excel_import.py` 提供模板、上传预览、按批次确认及标注原表下载；页面在“数据维护—数据导入”。仅 `.xlsx`，2 MB／1,000 条，支持多项目多日期新增和更新。
+- Excel 处理依赖 `openpyxl` 与 `defusedxml`；公式不执行。每个项目＋日期使用独立事务，同组失败回滚；原表右侧标注逐行结果，并附统计表。
+- `GET /api/maintain/import/template` 下载授权项目模板；`POST /api/maintain/import/excel/preview` 接收 `file_name`、`file_base64`；`POST /api/maintain/import/excel/{batch_id}/commit` 确认；`GET /api/maintain/import/excel/{batch_id}/report` 下载。完整路径带 `/dashboard`。
+- 所有接口要求 `maintain.import`；预览与提交都按同一有效角色的项目范围鉴权，批次和回执绑定上传者。校验后不立即写入，提交时复查数据和指标配置版本。完成批次重复确认不重放。
+- `IMPORT_DIR` 默认 `/opt/dashboard/imports`，由 dashboard 用户独占（0700，文件 0600）；原文件及结果 24 小时后不可下载，过期目录在后续上传时清理。该目录在应用运行目录之外，不随 rsync 发布删除。
+- 首次启用：`install -d -o dashboard -g dashboard -m 700 /opt/dashboard/imports`；将 `deployment/dashboard-imports.conf` 安装到 `/etc/systemd/system/dashboard.service.d/imports.conf`，执行 daemon-reload 后发布。仅该目录设为可写，应用目录继续只读；不需要新增数据库授权或迁移表。
+- 旧 CSV 接口保留原有兼容行为，不作为新页面的批量更新入口。

@@ -68,6 +68,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/opt/dashboard/imports
 UMask=0077
 
 [Install]
@@ -75,6 +76,8 @@ WantedBy=multi-user.target
 '''
 Path('/etc/systemd/system/dashboard.service').write_text(service)
 root.chmod(0o755)
+(root/'imports').mkdir(exist_ok=True,mode=0o700)
+run(['chown','dashboard:dashboard',str(root/'imports')])
 run(['chmod','-R','a+rX','/opt/dashboard/app','/opt/dashboard/venv'])
 run(['systemctl','daemon-reload'])
 run(['systemctl','enable','--now','dashboard'])

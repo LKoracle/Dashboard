@@ -102,3 +102,5 @@ tr.drop-after{box-shadow:inset 0 -2px 0 #2563eb}
 @media(max-width:760px){.metric-search-field,.metric-search-name{flex:1 1 100%;max-width:none;min-width:0}.metric-search-actions{width:100%}}
 
 .maint-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0}.maint-toolbar input[type=file]{max-width:310px;font-size:12px}.error-banner{border:1px solid #f3b7b7;border-radius:8px;padding:12px;color:#9f3030;background:#fff8f8}.error-banner p{margin-top:0}
+
+.import-counts{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0}.import-count{min-width:110px;padding:14px 18px;background:#f3f6fc;border-radius:8px;display:flex;flex-direction:column;gap:6px}.import-count span{color:#64748b;font-size:13px}.import-count strong{font-size:24px;color:#1e293b}

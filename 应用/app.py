@@ -1247,6 +1247,8 @@ def _fmt_decimal(v):
 
 class MaintainItem(BaseModel):
     expected_version: int = Field(default=0,ge=0,strict=True)
+    expected_entry_id: int | None = Field(default=None,ge=1,strict=True)
+    expected_metric_version: int | None = Field(default=None,ge=1,strict=True)
     metric_id: int
     feature_id: int | None = None
     value: str | None = Field(default=None,max_length=32)
@@ -1275,7 +1277,7 @@ def _validate_value(raw, metric):
 def maintain_save(data:MaintainSave,request:Request):
     return save_maintenance(data,request)
 
-def save_maintenance(data,request,action='maintain.edit',source='WEB'):
+def save_maintenance(data,request,action='maintain.edit',source='WEB',dry_run=False):
     user=actor(request)
     check_permission(user,action)
     mutation(request)
@@ -1290,7 +1292,9 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB'):
         require_project(c,user,action,data.project_id,True)
         c.execute('SELECT id FROM project WHERE id=%s FOR UPDATE',(data.project_id,))
         c.fetchone()
-        c.execute('''SELECT m.id,m.name,m.unit,m.decimal_places,m.category_id,cat.code AS cat_code
+        c.execute('SELECT id FROM metric WHERE project_id=%s FOR UPDATE',(data.project_id,))
+        c.fetchall()
+        c.execute('''SELECT m.id,m.name,m.unit,m.decimal_places,m.category_id,m.row_version,cat.code AS cat_code
                      FROM metric m JOIN metric_category cat ON cat.id=m.category_id
                      WHERE m.project_id=%s AND m.is_enabled=1 AND m.archived_at IS NULL AND cat.is_enabled=1''',(data.project_id,))
         metric_rows=c.fetchall();attach_metric_semantics(c,metric_rows)
@@ -1307,6 +1311,8 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB'):
             mrow=metric_map.get(item.metric_id)
             if not mrow:
                 raise HTTPException(400,'指标不存在或已停用，请刷新后重试')
+            if item.expected_metric_version is not None and item.expected_metric_version!=mrow['row_version']:
+                raise HTTPException(409,'指标配置已变化，请重新上传校验')
             if mrow['cat_code']=='retention':
                 has_retention=True
             if item.feature_id is not None:
@@ -1361,6 +1367,7 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB'):
         saved=0
         versions=[]
         expected={(i.metric_id,i.feature_id):i.expected_version for i in data.items}
+        expected_ids={(i.metric_id,i.feature_id):i.expected_entry_id for i in data.items if 'expected_entry_id' in i.model_fields_set}
         for mid,fid,raw in prepared:
             record_date=date-timedelta(days=7) if metric_map[mid]['cat_code']=='retention' else date
             c.execute('''SELECT id,value_number,row_version FROM metric_entry
@@ -1368,7 +1375,9 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB'):
                       (data.project_id,mid,record_date,fid))
             row=c.fetchone()
             version=row['row_version'] if row else 0
+            if (mid,fid) in expected_ids and (row['id'] if row else None)!=expected_ids[(mid,fid)]:raise HTTPException(409,'数据已被其他操作更新，请刷新后重新编辑')
             if version!=expected[(mid,fid)]:raise HTTPException(409,'数据已被其他操作更新，请刷新后重新编辑')
+            if dry_run:continue
             mname=metric_map[mid]['name']
             info={'metric':mname,'metric_id':mid,'feature_id':fid,'stat_date':data.stat_date,'stored_date':record_date.isoformat(),'category_id':metric_map[mid]['category_id']}
             if raw is None:
@@ -1490,7 +1499,7 @@ def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:
     for row in records:
         before=json.loads(row['before_payload']) if isinstance(row['before_payload'],str) else row['before_payload']
         after=json.loads(row['after_payload']) if isinstance(row['after_payload'],str) else row['after_payload']
-        info=after or before or {};source='CSV 导入' if row['source_type']=='CSV' else '手工录入'
+        info=after or before or {};source={'CSV':'CSV 导入','EXCEL':'Excel 导入'}.get(row['source_type'],'手工录入')
         if category_id is not None and info.get('category_id')!=category_id:continue
         if q and q.casefold() not in (str(info.get('stat_date',''))+' '+source+' '+str(row['created_at'])).casefold():continue
         items.append({'id':row['id'],'saved_at':row['created_at'].isoformat(),'stat_date':info.get('stat_date',''),
@@ -1777,3 +1786,8 @@ def home_data(request:Request, project_id:int, stat_date:str):
             f['complete_configuration']=len(f['steps'])==counts.get(f['id'],0)
     return {'metrics':metrics,'values':values,'features':features,'funnels':funnels,
             'retention_date_basis':'baseline','today':_business_today().isoformat()}
+
+# Keep workbook parsing separate from ordinary maintenance and permission logic.
+import sys
+from excel_import import register as register_excel_import
+register_excel_import(sys.modules[__name__])
