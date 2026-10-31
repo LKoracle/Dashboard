@@ -463,7 +463,8 @@ async function commitMaintainImport(){const state=mtImport;if(state.busy||!state
  try{const result=await api('/maintain/import/excel/'+state.preview.batch_id+'/commit',{method:'POST',body:'{}'});state.result=result;state.preview=null;mtHistory=null;}
  catch(e){state.error=e.message;}
  state.busy=false;mtSaving=false;mtImportDialogRefresh();
- if(state.result){await mtLoadData();render();}}
+ if(state.result){await mtLoadData();render();
+  if(state.result.phase==='completed'){const dlg=document.querySelector('#maintImportDialog');if(dlg&&dlg.open)dlg.close();notify('导入完成，共写入 '+state.result.counts.inserted+' 条新增、'+state.result.counts.updated+' 条更新');}}}
 function buildImportDropdown(){const wrap=el('div',undefined,'mt-dd');
  const btn=el('button',undefined,'secondary');btn.type='button';btn.innerHTML=ICONS.down+'批量导入';btn.setAttribute('aria-haspopup','true');
  btn.addEventListener('click',e=>{e.stopPropagation();wrap.classList.toggle('open');});
