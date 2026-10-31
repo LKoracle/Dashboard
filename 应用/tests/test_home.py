@@ -37,8 +37,8 @@ def test_same_role_scope_query():
  class C:
   def execute(self,query,args):
    assert 'rp.role_id=r.id' in query and 'sp.role_id' in query
-   assert "pm.code='home.view'" in query
-   assert args==(2,)
+   assert "pm.code=%s" in query
+   assert args==(2,'home.view')
   def fetchall(self):return []
  assert module._home_projects(C(),{'id':2,'is_super':False})==[]
 

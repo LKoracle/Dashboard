@@ -7,8 +7,9 @@
 -- 用户与权限（应用运行账号）
 -- 已存在账号时 GRANT 为幂等操作，可重复执行。
 
--- 审计日志：仅插入
+-- 审计日志：写入 + 修改记录所需指定列只读（2026-10-31 用户已确认授权）
 GRANT INSERT ON dashboard.audit_log TO 'dashboard_app'@'172.17.0.1';
+GRANT SELECT (`id`,`project_id`,`actor_user_id`,`source_type`,`action_code`,`entity_type`,`entity_id`,`before_payload`,`after_payload`,`created_at`,`result`) ON dashboard.audit_log TO 'dashboard_app'@'172.17.0.1';
 
 -- 会话：查询 + 插入 + 更新 revoked_at（登出/吊销）
 GRANT SELECT, INSERT, UPDATE (`revoked_at`) ON dashboard.auth_session TO 'dashboard_app'@'172.17.0.1';

@@ -15,3 +15,5 @@
 .kpi{--metric-color:#83c4ff}.kpi:nth-child(2){--metric-color:#b8a7ff}.kpi:nth-child(3){--metric-color:#8bcaff}.kpi:nth-child(4){--metric-color:#edcb8a}@media(max-width:760px){.kpis{grid-template-columns:1fr 1fr!important}}[hidden]{display:none!important}
 
 .funnel-panel>h2{font-size:14px;line-height:1.5;margin:0;font-weight:600}
+
+#extraTrendCards{display:flex;flex-direction:column;gap:18px}#extraTrendCards:empty{display:none}#extraTrendCards h2{font-size:14px;margin:0}.metric-heading .en{display:inline}

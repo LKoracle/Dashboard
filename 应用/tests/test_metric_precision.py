@@ -26,6 +26,8 @@ def test_save_and_revision_use_precision(monkeypatch,dp,create):
    self.sql=sql;calls.append((sql,args))
   def fetchone(self):
    if 'FOR UPDATE' in self.sql:return dict(id=7,code='T0001',name='测试',name_key='测试',english_name=None,unit='%',definition=None,definition_status='PENDING',category_id=1,project_id=1,decimal_places=1,row_version=1)
+   if 'SELECT id FROM metric_entry' in self.sql:return None
+   if 'SELECT id FROM metric_revision' in self.sql:return {'id':1}
    if 'metric_code_prefix' in self.sql:return dict(metric_code_prefix='T',last_sequence=1)
    return {'next':2}
  @contextmanager
@@ -34,9 +36,10 @@ def test_save_and_revision_use_precision(monkeypatch,dp,create):
  monkeypatch.setattr(module,'actor',lambda r:{'id':1})
  monkeypatch.setattr(module,'check_permission',lambda *a:None)
  monkeypatch.setattr(module,'mutation',lambda *a:None)
+ monkeypatch.setattr(module,'require_project',lambda *a,**k:None)
  monkeypatch.setattr(module,'_validate_metric',lambda *a:'测试')
  monkeypatch.setattr(module,'audit',lambda *a:None)
- data=module.MetricPayload(name='测试',category_id=1,project_id=1,unit='%',decimal_places=dp)
+ data=module.MetricPayload(name='测试',category_id=1,project_id=1,unit='%',decimal_places=dp,row_version=1)
  if create:module.create_metric(data,None)
  else:module.update_metric(7,data,None)
  assert any('INSERT INTO metric_binding' in sql and args==((101 if create else 7),) for sql,args in calls)
