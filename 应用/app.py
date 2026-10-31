@@ -1480,7 +1480,7 @@ def import_csv(data:ImportCSV,request:Request):
     return {'saved':saved,'skipped':preview['skipped'],'errors':errors,'total':preview['total']}
 
 @app.get(BASE+'/api/maintain/history')
-def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:str='',stat_date:str='',source:str='',metric:str='',before_id:int|None=None):
+def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:str='',stat_date:str='',source:str='',metric:str=''):
     user=actor(request);check_permission(user,'maintain.view')
     if len(q)>100 or len(metric)>100:raise HTTPException(400,'搜索内容过长')
     if source not in ('','MANUAL','CSV','EXCEL'):raise HTTPException(400,'无效的来源筛选')
@@ -1492,10 +1492,7 @@ def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:
             WHERE a.entity_type='metric_entry' AND a.result='SUCCESS'
             AND COALESCE(a.project_id,e.project_id)=%s"""
         params=[project_id]
-        if before_id is not None:
-            if before_id<1:raise HTTPException(400,'无效分页参数')
-            query+=' AND a.id<%s';params.append(before_id)
-        query+=' ORDER BY a.id DESC LIMIT 200';c.execute(query,tuple(params));records=c.fetchall()
+        query+=' ORDER BY a.id DESC LIMIT 2000';c.execute(query,tuple(params));records=c.fetchall()
     items=[]
     for row in records:
         before=json.loads(row['before_payload']) if isinstance(row['before_payload'],str) else row['before_payload']
@@ -1513,7 +1510,7 @@ def maintain_history(request:Request,project_id:int,category_id:int|None=None,q:
             'metric':info.get('metric',''),'feature_id':info.get('feature_id'),'source':source_label,
             'before':before.get('value') if before else None,'after':after.get('value') if after else None,
             'operator':'系统操作' if row['actor_login']=='admin' or row['system_actor'] else (row['actor_name'] or '已移除用户')})
-    return {'items':items,'next_before_id':records[-1]['id'] if len(records)==200 else None}
+    return {'items':items,'total':len(items)}
 
 # ---- 漏斗管理：漏斗列表 / 新增 / 编辑 / 启停 ----
 def _validate_funnel(c,data,funnel_id=None):

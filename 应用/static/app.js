@@ -1,7 +1,7 @@
 'use strict';
 const base='/dashboard',content=document.querySelector('#content');
 let navigationItems=[],loadError='',editingRoleVersion=null,editingProjectVersion=null,editingUserVersion=null,editingMetricVersion=null;
-let user,items=[],canEdit=false,pending=null,listPages={menus:{page:1,size:10,total:0},roles:{page:1,size:10,total:0},projects:{page:1,size:10,total:0},users:{page:1,size:10,total:0},metrics:{page:1,size:10,total:0},funnels:{page:1,size:10,total:0}};
+let user,items=[],canEdit=false,pending=null,listPages={menus:{page:1,size:10,total:0},roles:{page:1,size:10,total:0},projects:{page:1,size:10,total:0},users:{page:1,size:10,total:0},metrics:{page:1,size:10,total:0},funnels:{page:1,size:10,total:0},history:{page:1,size:20,total:0}};
 let roles=[],rolesCanEdit=false,rolesCanCreate=false,roleMeta=null,editingRoleId=null;
 let projects=[],projectsCanEdit=false,projectsCanCreate=false,editingProjectId=null;
 let users=[],userRoleOptions=[],usersCanEdit=false,usersCanCreate=false,usersCanReset=false,editingUserId=null,roleDropdownOpen=false,selectedRoleIds=[];
@@ -474,7 +474,7 @@ function buildImportDropdown(){const wrap=el('div',undefined,'mt-dd');
  imp.addEventListener('click',()=>{wrap.classList.remove('open');openMaintainImportDialog();});
  menu.append(tpl,imp);wrap.append(btn,menu);return wrap;}
 function buildHistoryButton(){const b=el('button','修改记录','secondary');b.type='button';b.disabled=mtSaving;
- b.addEventListener('click',()=>{mtView='history';render();fetchMaintainHistory();});return b;}
+ b.addEventListener('click',()=>{mtView='history';listPages.history.page=1;render();fetchMaintainHistory();});return b;}
 function renderMaintainHistoryPage(){content.replaceChildren();
  content.append(el('p','数据维护 / 修改记录','breadcrumb'));
  const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
@@ -502,9 +502,9 @@ function mtImportDialogRefresh(){const dlg=document.querySelector('#maintImportD
  if(mtImport.result){const c=mtImport.result.counts;
   status.append(el('p','导入数据 '+c.total+' 条，有效数据 '+c.valid+' 条，无效数据 '+c.invalid+' 条。其中新增数据 '+c.inserted+' 条，更新数据 '+c.updated+' 条。','mt-import-stats'));
   status.append(el('p',mtImport.result.phase==='completed'?'全部有效数据已写入。':'处理异常或中断，请下载标注结果核对已完成及待核对的数据。','muted'));}}
-async function fetchMaintainHistory(before=null){const request=++mtHistoryVersion,project=mtProject;const previous=before&&mtHistory?.items||[];mtHistory={items:previous,loading:true,error:'',next:null};render();
- try{const params=new URLSearchParams({project_id:String(project),metric:mtHistoryFilter.metric});if(mtHistoryFilter.category)params.set('category_id',mtHistoryFilter.category);if(mtHistoryFilter.stat_date)params.set('stat_date',mtHistoryFilter.stat_date);if(mtHistoryFilter.source)params.set('source',mtHistoryFilter.source);if(before)params.set('before_id',String(before));const data=await api('/maintain/history?'+params);if(request!==mtHistoryVersion||project!==mtProject)return;mtHistory={items:[...previous,...data.items],loading:false,error:'',next:data.next_before_id};}
- catch(e){if(request!==mtHistoryVersion)return;mtHistory={items:previous,loading:false,error:e.message,next:null};}render();}
+async function fetchMaintainHistory(){const request=++mtHistoryVersion,project=mtProject;mtHistory={items:[],loading:true,error:''};render();
+ try{const params=new URLSearchParams({project_id:String(project),metric:mtHistoryFilter.metric});if(mtHistoryFilter.category)params.set('category_id',mtHistoryFilter.category);if(mtHistoryFilter.stat_date)params.set('stat_date',mtHistoryFilter.stat_date);if(mtHistoryFilter.source)params.set('source',mtHistoryFilter.source);const data=await api('/maintain/history?'+params);if(request!==mtHistoryVersion||project!==mtProject)return;mtHistory={items:data.items,loading:false,error:''};}
+ catch(e){if(request!==mtHistoryVersion)return;mtHistory={items:[],loading:false,error:e.message};}render();}
 function renderMaintainAux(target){const card=el('section',undefined,'card');target.append(card);
  card.append(el('h2','修改记录'));
  const form=el('form',undefined,'metric-search mt-history-search');form.setAttribute('aria-label','修改记录查询');
@@ -517,12 +517,14 @@ function renderMaintainAux(target){const card=el('section',undefined,'card');tar
  const nameField=el('div',undefined,'metric-search-field mt-history-name');const nameLabel=el('label','指标名称');nameLabel.htmlFor='mtHistName';
  const name=el('input');name.id='mtHistName';name.type='text';name.placeholder='请输入指标名称，支持模糊查询';name.maxLength=100;name.value=mtHistoryFilter.metric;nameField.append(nameLabel,name);
  const actions=el('div',undefined,'metric-search-actions');const query=el('button','查询','primary');query.type='submit';const reset=el('button','重置','secondary');reset.type='button';
- form.onsubmit=e=>{e.preventDefault();mtHistoryFilter={category:category.value,stat_date:date.value,source:source.value,metric:name.value.trim()};fetchMaintainHistory();};
- reset.addEventListener('click',()=>{category.value='';date.value='';source.value='';name.value='';mtHistoryFilter={category:'',stat_date:'',source:'',metric:''};fetchMaintainHistory();});
+ form.onsubmit=e=>{e.preventDefault();mtHistoryFilter={category:category.value,stat_date:date.value,source:source.value,metric:name.value.trim()};listPages.history.page=1;fetchMaintainHistory();};
+ reset.addEventListener('click',()=>{category.value='';date.value='';source.value='';name.value='';mtHistoryFilter={category:'',stat_date:'',source:'',metric:''};listPages.history.page=1;fetchMaintainHistory();});
  actions.append(query,reset);form.append(catField,dateField,srcField,nameField,actions);card.append(form);
  if(!mtHistory){card.append(el('p','点击查询加载记录'));return;}if(mtHistory.loading)card.append(el('p','正在加载…'));if(mtHistory.error){card.append(el('p',mtHistory.error,'form-error'));return;}
- if(!mtHistory.items.length&&!mtHistory.loading)card.append(el('p','当前条件下暂无修改记录。历史记录若无法安全确定项目归属，不向项目用户展示。','muted'));
- if(mtHistory.items.length){const wrap=el('div',undefined,'table-wrap'),table=el('table');const head=el('tr');['保存时间（北京时间）','统计日期','指标','修改前','修改后','操作人','来源'].forEach(t=>head.append(el('th',t)));table.append(head);
- for(const r of mtHistory.items){const row=el('tr'),time=new Date(/[Zz]|[+-]\d\d:\d\d$/.test(r.saved_at)?r.saved_at:r.saved_at+'Z').toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});[time,r.stat_date,r.metric,r.before??'未维护',r.after??'已清空',r.operator,r.source].forEach(v=>row.append(el('td',String(v))));table.append(row);}wrap.append(table);card.append(wrap);}
- if(mtHistory.next){const next=el('button','加载更早记录','secondary');next.disabled=mtHistory.loading;next.onclick=()=>fetchMaintainHistory(mtHistory.next);card.append(next);}
+ const matched=mtHistory.items;listPages.history.total=matched.length;listPages.history.page=Math.max(1,Math.min(listPages.history.page,Math.max(1,Math.ceil(matched.length/listPages.history.size))));
+ card.append(el('p',`共 ${matched.length} 条修改记录`,'metric-search-count'));
+ if(!matched.length)card.append(el('p','当前条件下暂无修改记录。历史记录若无法安全确定项目归属，不向项目用户展示。','muted'));
+ if(matched.length){const rows=pagedList('history',matched);const wrap=el('div',undefined,'table-wrap'),table=el('table');const head=el('tr');['保存时间（北京时间）','统计日期','指标','修改前','修改后','操作人','来源'].forEach(t=>head.append(el('th',t)));table.append(head);
+ for(const r of rows){const row=el('tr'),time=new Date(/[Zz]|[+-]\d\d:\d\d$/.test(r.saved_at)?r.saved_at:r.saved_at+'Z').toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});[time,r.stat_date,r.metric,r.before??'未维护',r.after??'已清空',r.operator,r.source].forEach(v=>row.append(el('td',String(v))));table.append(row);}wrap.append(table);card.append(wrap);}
+ card.append(buildPager('history','修改记录'));
 }
