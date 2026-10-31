@@ -214,15 +214,13 @@ function renderMaintain(){content.replaceChildren();
  if(!mtBoot){content.replaceChildren(el('p','数据维护 / 指标录入','breadcrumb'),el('p','配置加载失败，请刷新重试。','form-error'));return;}
  if(mtView==='history'){renderMaintainHistoryPage();return;}
  content.append(el('p','数据维护','breadcrumb'));
- const heading=el('div',undefined,'page-heading with-actions');const titleRow=el('div',undefined,'title-row');
+ const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
  titleRow.append(el('h1','指标数据维护'),el('p','按项目、统计日期维护已启用指标的数值数据。','subtitle'));
- const headActions=el('div',undefined,'page-heading-actions');
- headActions.append(buildImportDropdown(),buildHistoryButton());
- heading.append(titleRow,headActions);content.append(heading);
- const ctx=el('div',undefined,'mt-context');
+ heading.append(titleRow);content.append(heading);
+ const ctx=el('div',undefined,'mt-context');const ctxLeft=el('div',undefined,'mt-context-left');
  const tabs=el('div',undefined,'mt-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','切换项目');
  for(const p of mtBoot.projects){const b=el('button',p.name,'mt-tab'+(p.id===mtProject?' active':''));b.type='button';b.disabled=mtSaving;b.setAttribute('aria-pressed',String(p.id===mtProject));b.addEventListener('click',()=>mtSwitchProject(p.id));tabs.append(b);}
- ctx.append(tabs);
+ ctxLeft.append(tabs);
  const dateRow=el('div',undefined,'mt-date-row');
  const dateLabel=el('label','统计日期','mt-date-label');
  const stepper=el('div',undefined,'mt-stepper');
@@ -237,7 +235,8 @@ function renderMaintain(){content.replaceChildren();
  dateLabel.htmlFor='mtDateInput';
  dateRow.append(dateLabel,stepper);
  if(mtIsDirty())dateRow.append(el('span','当前项目与日期下有未保存的更改，切换后将保留草稿。','mt-dirty-note'));
- ctx.append(dateRow);content.append(ctx);if(mtStatus==='error'){const error=el('div',undefined,'error-banner');error.append(el('p',mtMsg));const retry=el('button','重新加载数据','secondary');retry.onclick=async()=>{if(mtIsDirty()&&!confirm('重新加载会放弃当前未保存的修改，是否继续？'))return;mtDraft.clear();mtStash.delete(mtProject+'|'+mtDate);await mtLoadData();render();};error.append(retry);content.append(error);} if(!mtBoot.projects.length)content.append(el('p','暂无有权访问的启用项目','maint-empty'));
+ ctxLeft.append(dateRow);ctx.append(ctxLeft);const headActions=el('div',undefined,'page-heading-actions');
+ headActions.append(buildImportDropdown(),buildHistoryButton());ctx.append(headActions);content.append(ctx);if(mtStatus==='error'){const error=el('div',undefined,'error-banner');error.append(el('p',mtMsg));const retry=el('button','重新加载数据','secondary');retry.onclick=async()=>{if(mtIsDirty()&&!confirm('重新加载会放弃当前未保存的修改，是否继续？'))return;mtDraft.clear();mtStash.delete(mtProject+'|'+mtDate);await mtLoadData();render();};error.append(retry);content.append(error);} if(!mtBoot.projects.length)content.append(el('p','暂无有权访问的启用项目','maint-empty'));
  const grid=el('div',undefined,'maint-sections');
  for(const cat of mtBoot.categories)grid.append(mtSection(cat));
  content.append(grid);
