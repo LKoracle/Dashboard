@@ -209,7 +209,7 @@ document.querySelector('#saveMaintainBtn').addEventListener('click',saveMaintain
 // ==================== 漏斗管理 ====================
 let funnels=[],funnelOptions=[],funnelProjects=[],funnelsCanCreate=false,funnelsCanEdit=false;
 let funnelEdit=null,funnelDragIndex=null;
-function funnelOptionsFor(project){return funnelOptions.filter(o=>String(o.project_id)===project);}
+function funnelOptionsFor(project){return funnelOptions.filter(o=>String(o.project_id)===project&&o.category_code==='funnel');}
 function renderFunnels(){content.replaceChildren();
  content.append(el('p','设置管理 / 漏斗管理','breadcrumb'));
  const heading=el('div',undefined,'page-heading');const titleRow=el('div',undefined,'title-row');
@@ -321,7 +321,7 @@ function renderFunnelEditor(){const d=funnelEdit;if(!d){renderFunnels();return;}
  addStepBtn.disabled=!d.project;addStepBtn.addEventListener('click',addFunnelStep);
  toolbar.append(addStepBtn);card2.append(toolbar);
  const hint=d.project
-   ?(opts.length?'拖动步骤左侧手柄调整顺序，也可使用上下方向键；每步仅可选择当前项目已启用的指标。':'该项目暂无可选指标，请先在指标配置中维护适用指标。')
+   ?(opts.length?'拖动步骤左侧手柄调整顺序，也可使用上下方向键；每步仅可选择当前项目已启用的「漏斗指标」。':'该项目暂无可选的漏斗指标，请先在指标管理中维护类型为「漏斗指标」的适用指标。')
    :'请先选择适用项目，再添加或编辑漏斗步骤。';
  card2.append(el('p',hint,'funnel-editor-hint'));
  if(d.errors.stages)card2.append(el('div',d.errors.stages,'funnel-field-error'));
@@ -348,7 +348,7 @@ function renderFunnelEditor(){const d=funnelEdit;if(!d){renderFunnels();return;}
    const metricTd=el('td',undefined,'funnel-step-metric-cell');
    const mSel=document.createElement('select');mSel.id='funnel-step-metric-'+i;
    const mDef=document.createElement('option');mDef.value='';
-   mDef.textContent=step.binding&&!opts.some(o=>String(o.binding_id)===step.binding)?'原指标已停用或不适用，请重新选择':'请选择指标';
+   mDef.textContent=step.binding&&!opts.some(o=>String(o.binding_id)===step.binding)?'原指标已停用、类型不符或不适用，请重新选择':'请选择指标';
    mSel.append(mDef);
    for(const o of opts){const op=document.createElement('option');op.value=String(o.binding_id);
     op.textContent=o.metric_name+(o.unit?'（'+o.unit+'）':'')+' · '+o.metric_code+(o.feature_name?' · '+o.feature_name:'');
@@ -377,7 +377,7 @@ function validateFunnelClient(d){const errors={};
  if(!d.steps.length)errors.stages='请至少添加一个漏斗步骤';
  const allowed=new Set(funnelOptionsFor(d.project).map(o=>String(o.binding_id)));
  d.steps.forEach((s,i)=>{if(!s.name.trim())errors['name'+i]='请填写步骤名称';
-  if(!allowed.has(s.binding))errors['metric'+i]='请选择适用项目内已启用的指标';});
+  if(!allowed.has(s.binding))errors['metric'+i]='请选择适用项目内已启用的「漏斗指标」';});
  return errors;}
 async function saveFunnel(){const d=funnelEdit;if(!d||d.saving)return;
  d.errors=validateFunnelClient(d);

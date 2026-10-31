@@ -1255,11 +1255,17 @@ def _validate_funnel(c,data,funnel_id=None):
         if st.binding_id in seen:
             raise HTTPException(400,'第 %d 步与其他步骤选择了相同指标，请分别选择不同指标'%i)
         seen.add(st.binding_id)
-        c.execute('SELECT b.project_id,b.archived_at,m.is_enabled,m.archived_at AS metric_archived '
-                  'FROM metric_binding b JOIN metric m ON m.id=b.metric_id WHERE b.id=%s',(st.binding_id,))
+        c.execute('SELECT b.project_id,b.archived_at,m.is_enabled,m.archived_at AS metric_archived,'
+                  'cat.code AS category_code,cat.is_enabled AS category_enabled '
+                  'FROM metric_binding b JOIN metric m ON m.id=b.metric_id '
+                  'LEFT JOIN metric_category cat ON cat.id=m.category_id WHERE b.id=%s',(st.binding_id,))
         b=c.fetchone()
         if not b or b['project_id']!=data.project_id or b['archived_at'] is not None:
             raise HTTPException(400,'第 %d 步所选指标不适用于当前项目'%i)
+        if b['category_code']!='funnel':
+            raise HTTPException(400,'第 %d 步只能选择类型为「漏斗指标」的指标'%i)
+        if not b['category_enabled']:
+            raise HTTPException(400,'第 %d 步所选指标类型已停用，请重新选择'%i)
         if not b['is_enabled'] or b['metric_archived'] is not None:
             raise HTTPException(400,'第 %d 步所选指标已停用，请重新选择'%i)
     return name,name_key
@@ -1313,9 +1319,10 @@ def list_funnels(request:Request):
         # 可选项：项目内启用指标对应的有效数据项（项目级或功能级）
         c.execute('SELECT b.id AS binding_id,b.project_id,b.metric_id,b.feature_id,'
                   'm.name AS metric_name,m.code AS metric_code,m.unit,pf.name AS feature_name,'
-                  'p.display_order AS project_order,m.display_order AS metric_order '
+                  'p.display_order AS project_order,m.display_order AS metric_order,cat.code AS category_code '
                   'FROM metric_binding b '
                   'JOIN metric m ON m.id=b.metric_id AND m.is_enabled=1 AND m.archived_at IS NULL '
+                  "JOIN metric_category cat ON cat.id=m.category_id AND cat.code='funnel' AND cat.is_enabled=1 "
                   'JOIN project p ON p.id=b.project_id '
                   'LEFT JOIN project_feature pf ON pf.id=b.feature_id AND pf.archived_at IS NULL '
                   'WHERE b.archived_at IS NULL '
