@@ -520,7 +520,8 @@ function renderMaintainAux(target){const card=el('section',undefined,'card');tar
  form.onsubmit=e=>{e.preventDefault();mtHistoryFilter={category:category.value,stat_date:date.value,source:source.value,metric:name.value.trim()};listPages.history.page=1;fetchMaintainHistory();};
  reset.addEventListener('click',()=>{category.value='';date.value='';source.value='';name.value='';mtHistoryFilter={category:'',stat_date:'',source:'',metric:''};listPages.history.page=1;fetchMaintainHistory();});
  actions.append(query,reset);form.append(catField,dateField,srcField,nameField,actions);card.append(form);
- if(!mtHistory){card.append(el('p','点击查询加载记录'));return;}if(mtHistory.loading)card.append(el('p','正在加载…'));if(mtHistory.error){card.append(el('p',mtHistory.error,'form-error'));return;}
+ if(!mtHistory){card.append(el('p','点击查询加载记录'));return;}if(mtHistory.error){card.append(el('p',mtHistory.error,'form-error'));return;}
+ if(mtHistory.loading){card.append(el('p','正在加载…'));return;}
  const matched=mtHistory.items;listPages.history.total=matched.length;listPages.history.page=Math.max(1,Math.min(listPages.history.page,Math.max(1,Math.ceil(matched.length/listPages.history.size))));
  card.append(el('p',`共 ${matched.length} 条修改记录`,'metric-search-count'));
  if(!matched.length)card.append(el('p','当前条件下暂无修改记录。历史记录若无法安全确定项目归属，不向项目用户展示。','muted'));
