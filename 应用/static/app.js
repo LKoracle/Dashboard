@@ -11,7 +11,8 @@ const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefine
 const ic=(paths)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 const ICONS={plus:ic('<path d="M12 5v14M5 12h14"/>'),edit:ic('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),trash:ic('<path d="M3 6h18M8 6V4h8v2m-9 0v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M10 11v6M14 11v6"/>'),pause:ic('<path d="M8 5v14M16 5v14"/>'),play:ic('<path d="m8 5 11 7-11 7Z" fill="currentColor" stroke-linejoin="round"/>'),up:ic('<path d="m18 15-6-6-6 6"/>'),down:ic('<path d="m6 9 6 6 6-6"/>'),key:ic('<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6M12 9v6m-2-4 2-2 2 2"/>')};
 async function api(path,options={}){const response=await fetch(base+'/api'+path,{...options,headers:{'Content-Type':'application/json',...(user?{'X-CSRF-Token':user.csrf_token}:{}),...options.headers}});if(response.status===401){location.replace(base+'/login');throw Error('请重新登录');}const data=await response.json();if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'操作失败，请稍后重试');return data;}
-function notify(message){const n=document.querySelector('#toast');n.textContent=message;n.hidden=false;setTimeout(()=>n.hidden=true,3500);}
+let toastTimer;
+function notify(message,position='bottom'){const n=document.querySelector('#toast');n.textContent=message;n.classList.toggle('toast-center',position==='center');n.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.hidden=true,3500);}
 function enabled(row){const items=navigationItems;const seen=new Set();while(row){if(!row.is_enabled||seen.has(row.id))return false;seen.add(row.id);row=items.find(m=>m.id===row.parent_id);}return true;}
 function currentPageKey(){if(location.pathname.endsWith('/maintain'))return 'maintain';if(location.pathname.endsWith('/settings/roles'))return 'roles';if(location.pathname.endsWith('/settings/projects'))return 'projects';if(location.pathname.endsWith('/settings/users'))return 'users';if(location.pathname.endsWith('/settings/metrics'))return 'metrics';if(location.pathname.endsWith('/settings/funnels'))return 'funnel';return 'menus';}
 const SIDEBAR_ROUTES={project:'/settings/projects',menu:'/settings/menus',role:'/settings/roles',user:'/settings/users',metric:'/settings/metrics',funnel:'/settings/funnels'};
@@ -176,14 +177,14 @@ function mtValidateAll(items,errs){
 async function saveMaintain(){if(mtSaving||!mtCanEdit||!mtDataReady)return;
  const items=[],errs=new Map();mtValidateAll(items,errs);
  for(const [k,msg] of errs){const err=document.querySelector('#err-'+CSS.escape(k)),wrap=document.querySelector('#wrap-'+CSS.escape(k));if(err)err.textContent=msg;if(wrap)wrap.classList.add('invalid');}
- if(errs.size){notify('请先修正录入错误');return;}
- if(!items.length){notify('暂无需要保存的更改');return;}
+ if(errs.size){notify('请先修正录入错误','center');return;}
+ if(!items.length){notify('暂无需要保存的更改','center');return;}
  const project=mtProject,date=mtDate;mtSaving=true;mtStatus='saving';render();
  try{const result=await api('/maintain/data',{method:'POST',body:JSON.stringify({project_id:project,stat_date:date,items})});
   if(project===mtProject&&date===mtDate){for(const item of items){const key=mtKey(item.metric_id,item.feature_id);if(item.value===null)mtValues.delete(key);else mtValues.set(key,item.value);mtDraft.delete(key);}
    for(const v of result.versions||[])mtVersions.set(mtKey(v.metric_id,v.feature_id),v.row_version);
-   mtStash.set(project+'|'+date,new Map(mtDraft));mtStatus='saved';mtMsg='已保存 '+result.saved+' 项更改';notify('数据保存成功');}
- }catch(ex){if(project===mtProject&&date===mtDate){mtStatus='error';mtMsg=ex.message;if(ex.message.includes('更新'))mtDataReady=false;}notify(ex.message);}
+   mtStash.set(project+'|'+date,new Map(mtDraft));mtStatus='saved';mtMsg='已保存 '+result.saved+' 项更改';notify('数据保存成功','center');}
+ }catch(ex){if(project===mtProject&&date===mtDate){mtStatus='error';mtMsg=ex.message;if(ex.message.includes('更新'))mtDataReady=false;}notify(ex.message,'center');}
  finally{mtSaving=false;render();}}
 function mtSection(cat){const metrics=mtMetricsOf(cat.id);
  const section=el('section',undefined,'card maint-section');section.dataset.cat=cat.code;
