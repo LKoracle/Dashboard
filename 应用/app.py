@@ -1767,8 +1767,11 @@ def home_data(request:Request, project_id:int, stat_date:str):
         attach_metric_semantics(c,metrics)
         c.execute('''SELECT e.metric_id,e.feature_id,e.stat_date,e.value_number FROM metric_entry e
           JOIN metric m ON m.id=e.metric_id AND m.project_id=e.project_id
-          WHERE e.project_id=%s AND e.stat_date BETWEEN %s AND %s AND m.is_enabled=1 AND m.archived_at IS NULL''',
-          (project_id,day-timedelta(days=13),day))
+          JOIN metric_category cat ON cat.id=m.category_id
+          WHERE e.project_id=%s AND m.is_enabled=1 AND m.archived_at IS NULL
+          AND ((cat.code='retention' AND e.stat_date BETWEEN %s AND %s)
+            OR (cat.code<>'retention' AND e.stat_date BETWEEN %s AND %s))''',
+          (project_id,day-timedelta(days=20),day-timedelta(days=7),day-timedelta(days=13),day))
         values=[{'metric_id':r['metric_id'],'feature_id':r['feature_id'],
           'date':r['stat_date'].isoformat(),'value':_fmt_decimal(r['value_number']) if r['value_number'] is not None else None} for r in c.fetchall()]
         c.execute('SELECT id,name FROM project_feature WHERE project_id=%s AND archived_at IS NULL ORDER BY display_order,id',(project_id,))

@@ -141,3 +141,14 @@ def test_system_entities_hidden_even_for_system_login(client,monkeypatch):
 def test_user_password_reset_cannot_take_over_broader_normal_role(client,db):
  db.execute('INSERT INTO sys_user_role(user_id,role_id) VALUES(3,4)')
  assert client.post('/dashboard/api/users/3/reset-password').status_code==403
+
+def test_home_retention_fetches_full_14_observation_days(client,db):
+ # Viewing Oct 30 needs baseline Oct 10..23, displayed as observation Oct 17..30.
+ for day,value in [('2026-10-09',60),('2026-10-10',65),('2026-10-23',70)]:
+  db.execute('INSERT INTO metric_entry(project_id,metric_id,stat_date,value_number) VALUES(1,31,?,?)',(day,value))
+ db.execute("INSERT INTO metric_entry(project_id,metric_id,stat_date,value_number) VALUES(1,71,'2026-10-10',20)")
+ response=client.get('/dashboard/api/home/data?project_id=1&stat_date=2026-10-30');assert response.status_code==200
+ values=response.json()['values'];retention={r['date']:r['value'] for r in values if r['metric_id']==31}
+ assert retention['2026-10-10']=='65' and retention['2026-10-23']=='70'
+ assert '2026-10-09' not in retention
+ assert not any(r['metric_id']==71 and r['date']=='2026-10-10' for r in values)
