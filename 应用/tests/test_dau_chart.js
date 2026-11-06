@@ -7,18 +7,20 @@ const c=vm.createContext({selectedDate:'2026-11-05',$:s=>nodes[s],$$:()=>[],esc:
 vm.runInContext(charts.slice(0,charts.indexOf('function renderRetentionTrend(')),c);
 const draw=()=>{vm.runInContext("renderTrend({name:'测试项目',color:'#76bfff'},[])",c);return nodes['#chartPlot'].innerHTML;};
 let html=draw();
-assert(html.includes('>万人</text>'));
-assert(html.includes('>0</text>'));
+assert(html.includes('>万人（非零起点）</text>'));
+assert(html.includes('>6</text>'));
 assert(html.includes('>9</text>'));
 assert(!html.includes('k</text>'));
 assert(html.includes('2026.11.02 · 71,436 人'));
 assert.equal((html.match(/class="plot-point"/g)||[]).length,4);
 const points=[...html.matchAll(/class="plot-point" cx="([^"]+)" cy="([^"]+)"/g)].map(m=>Number(m[2]));
-// The 6.6% real increase must not span most of the plot; both points share a zero baseline.
-assert(Math.abs(points[0]-points[2])/(250-24)<0.06);
-assert(Math.abs(points[0]-(24+(90000-71436)/90000*(250-24)))<1e-8);
+// Keep ordinary variation visible without stretching the small increase across the entire plot.
+const changeHeight=Math.abs(points[0]-points[2])/(250-24);
+assert(changeHeight>0.1&&changeHeight<0.25);
+assert(Math.abs(points[0]-(24+(90000-71436)/30000*(250-24)))<1e-8);
 Object.keys(data).forEach(k=>delete data[k]);data['2026-11-05']=1199;
-html=draw();assert(html.includes('>人</text>'));assert(html.includes('>0</text>'));assert(html.includes('>2,000</text>'));
+html=draw();assert(html.includes('>人（非零起点）</text>'));assert(html.includes('>1,000</text>'));assert(html.includes('>2,000</text>'));
+data['2026-11-04']=0;html=draw();assert(html.includes('>0</text>'));assert(!html.includes('非零起点'));delete data['2026-11-04'];
 data['2026-11-05']=0;html=draw();assert(!/NaN|Infinity/.test(html));assert(html.includes('cy="250"'));
 delete data['2026-11-05'];html=draw();assert(html.includes('所选日期范围暂无数据'));
-console.log('日活趋势通过：零基线、万人单位、真实数值、缺失日期、低人数、全零及空数据');
+console.log('日活趋势通过：适度收窄纵轴、明确非零起点、万人单位、真实数值、缺失日期、低人数、全零及空数据');
