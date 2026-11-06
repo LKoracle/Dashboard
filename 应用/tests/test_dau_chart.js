@@ -1,0 +1,24 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const charts=fs.readFileSync(path.join(__dirname,'../static/home-charts.js'),'utf8');
+const nodes={'#chartPlot':{clientWidth:1100,clientHeight:280,innerHTML:''},'#chartPeriod':{textContent:''}};
+const data={'2026-11-02':71436,'2026-11-03':75426,'2026-11-04':76180,'2026-11-05':74666};
+const c=vm.createContext({selectedDate:'2026-11-05',$:s=>nodes[s],$$:()=>[],esc:String,dayActive:(_,date)=>data[date]??null});
+vm.runInContext(charts.slice(0,charts.indexOf('function renderRetentionTrend(')),c);
+const draw=()=>{vm.runInContext("renderTrend({name:'测试项目',color:'#76bfff'},[])",c);return nodes['#chartPlot'].innerHTML;};
+let html=draw();
+assert(html.includes('>万人</text>'));
+assert(html.includes('>0</text>'));
+assert(html.includes('>9</text>'));
+assert(!html.includes('k</text>'));
+assert(html.includes('2026.11.02 · 71,436 人'));
+assert.equal((html.match(/class="plot-point"/g)||[]).length,4);
+const points=[...html.matchAll(/class="plot-point" cx="([^"]+)" cy="([^"]+)"/g)].map(m=>Number(m[2]));
+// The 6.6% real increase must not span most of the plot; both points share a zero baseline.
+assert(Math.abs(points[0]-points[2])/(250-24)<0.06);
+assert(Math.abs(points[0]-(24+(90000-71436)/90000*(250-24)))<1e-8);
+Object.keys(data).forEach(k=>delete data[k]);data['2026-11-05']=1199;
+html=draw();assert(html.includes('>人</text>'));assert(html.includes('>0</text>'));assert(html.includes('>2,000</text>'));
+data['2026-11-05']=0;html=draw();assert(!/NaN|Infinity/.test(html));assert(html.includes('cy="250"'));
+delete data['2026-11-05'];html=draw();assert(html.includes('所选日期范围暂无数据'));
+console.log('日活趋势通过：零基线、万人单位、真实数值、缺失日期、低人数、全零及空数据');
