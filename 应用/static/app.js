@@ -131,6 +131,7 @@ async function mtLoadData(){const request=++mtRequestVersion,project=mtProject,d
   mtValues=new Map(d.items.map(r=>[mtKey(r.metric_id,r.feature_id),String(r.value)]));mtVersions=new Map(d.items.map(r=>[mtKey(r.metric_id,r.feature_id),r.row_version]));mtDataReady=true;mtStatus='idle';return true;
  }catch(ex){if(request!==mtRequestVersion)return false;mtStatus='error';mtMsg='读取失败：'+ex.message;mtDataReady=false;return true;}}
 function mtSwitchProject(id){if(mtSaving||!mtBoot||id===mtProject)return;mtStash.set(mtProject+'|'+mtDate,new Map(mtDraft));mtProject=id;mtHistory=null;mtDraft=new Map(mtStash.get(mtProject+'|'+mtDate)||[]);mtValues=new Map();mtDataReady=false;mtStatus='loading';render();mtLoadData().then(current=>{if(current)render();});}
+function openDatePickerOnClick(input){input.addEventListener('click',()=>{if(input.disabled||input.readOnly||typeof input.showPicker!=='function')return;try{input.showPicker();}catch{/* Keep the native calendar icon available when showPicker is unsupported or restricted. */}});}
 function mtSwitchDate(d){if(mtSaving||d===mtDate||d>mtToday())return;mtStash.set(mtProject+'|'+mtDate,new Map(mtDraft));mtDate=d;mtDraft=new Map(mtStash.get(mtProject+'|'+mtDate)||[]);mtValues=new Map();mtDataReady=false;mtStatus='loading';render();mtLoadData().then(current=>{if(current)render();});}
 function mtIsDirty(){for(const [k,v] of mtDraft){const a=mtValues.has(k)?mtValues.get(k):'';if((v||'')!==a)return true;}return false;}
 function mtMetricsOf(catId){return mtBoot?mtBoot.metrics.filter(m=>m.project_id===mtProject&&m.category_id===catId):[];}
@@ -227,7 +228,7 @@ function renderMaintain(){content.replaceChildren();
  const stepper=el('div',undefined,'mt-stepper');
  const prevBtn=el('button');prevBtn.type='button';prevBtn.disabled=mtSaving;prevBtn.setAttribute('aria-label','前一天');prevBtn.innerHTML=ic('<path d="m15 18-6-6 6-6"/>');
  prevBtn.addEventListener('click',()=>mtSwitchDate(mtShiftDate(mtDate,-1)));
- const dateInput=document.createElement('input');dateInput.type='date';dateInput.disabled=mtSaving;dateInput.id='mtDateInput';dateInput.value=mtDate;dateInput.max=mtToday();
+ const dateInput=document.createElement('input');dateInput.type='date';dateInput.disabled=mtSaving;dateInput.id='mtDateInput';dateInput.value=mtDate;dateInput.max=mtToday();openDatePickerOnClick(dateInput);
  dateInput.addEventListener('change',()=>{if(dateInput.value)mtSwitchDate(dateInput.value);});
  const nextBtn=el('button');nextBtn.type='button';nextBtn.setAttribute('aria-label','后一天');nextBtn.innerHTML=ic('<path d="m9 18 6-6-6-6"/>');
  nextBtn.disabled=mtSaving||mtDate>=mtToday();
@@ -513,7 +514,7 @@ function renderMaintainAux(target){const card=el('section',undefined,'card');tar
  const catField=el('div',undefined,'metric-search-field');const catLabel=el('label','指标类型');catLabel.htmlFor='mtHistCategory';
  const category=el('select');category.id='mtHistCategory';const all=el('option','全部类型');all.value='';category.append(all);for(const c of mtBoot.categories){const o=el('option',c.name);o.value=c.id;category.append(o);}category.value=mtHistoryFilter.category;catField.append(catLabel,category);
  const dateField=el('div',undefined,'metric-search-field');const dateLabel=el('label','统计日期');dateLabel.htmlFor='mtHistDate';
- const date=el('input');date.id='mtHistDate';date.type='date';date.value=mtHistoryFilter.stat_date;dateField.append(dateLabel,date);
+ const date=el('input');date.id='mtHistDate';date.type='date';date.value=mtHistoryFilter.stat_date;openDatePickerOnClick(date);dateField.append(dateLabel,date);
  const srcField=el('div',undefined,'metric-search-field');const srcLabel=el('label','来源');srcLabel.htmlFor='mtHistSource';
  const source=el('select');source.id='mtHistSource';[['','全部来源'],['MANUAL','手工录入'],['CSV','CSV 导入'],['EXCEL','Excel 导入']].forEach(([v,t])=>{const o=el('option',t);o.value=v;source.append(o);});source.value=mtHistoryFilter.source;srcField.append(srcLabel,source);
  const nameField=el('div',undefined,'metric-search-field mt-history-name');const nameLabel=el('label','指标名称');nameLabel.htmlFor='mtHistName';

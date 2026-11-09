@@ -1,0 +1,12 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8');
+const c=vm.createContext({});
+vm.runInContext(source.slice(source.indexOf('function openDatePickerOnClick('),source.indexOf('function mtSwitchDate(')),c);
+let click,opened=0;const input={disabled:false,readOnly:false,addEventListener:(type,fn)=>{assert.equal(type,'click');click=fn;},showPicker:()=>opened++};
+c.input=input;vm.runInContext('openDatePickerOnClick(input)',c);click();assert.equal(opened,1);
+input.disabled=true;click();assert.equal(opened,1);input.disabled=false;input.readOnly=true;click();assert.equal(opened,1);
+input.readOnly=false;delete input.showPicker;assert.doesNotThrow(click);
+input.showPicker=()=>{throw Error('NotAllowedError')};assert.doesNotThrow(click);
+assert(source.includes('openDatePickerOnClick(dateInput)'));assert(source.includes('openDatePickerOnClick(date)'));
+console.log('日期选择通过：整框点击打开、禁用和只读不打开、兼容不支持或受限浏览器；录入及修改记录均接入');
