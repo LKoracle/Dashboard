@@ -155,8 +155,10 @@ def test_home_retention_fetches_full_14_observation_days(client,db):
 
 
 def test_project_metrics_save_without_any_features(client,db):
- # Remove all live features without deleting their historical records.
- db.execute("UPDATE project_feature SET archived_at=CURRENT_TIMESTAMP WHERE project_id=1")
+ # Reproduce the exact UI lifecycle: edit the project and delete its last feature.
+ response=client.put('/dashboard/api/projects/1',json={'name':'测试项目A','is_enabled':True,'features':[],'row_version':1})
+ assert response.status_code==200,response.text
+ assert client.get('/dashboard/api/projects/1').json()['features']==[]
  boot=client.get('/dashboard/api/maintain/bootstrap').json()
  assert not [f for f in boot['features'] if f['project_id']==1]
  payload={'project_id':1,'stat_date':'2026-10-30','items':[{'metric_id':11,'value':'123','expected_version':0}]}
