@@ -152,3 +152,19 @@ def test_home_retention_fetches_full_14_observation_days(client,db):
  assert retention['2026-10-10']=='65' and retention['2026-10-23']=='70'
  assert '2026-10-09' not in retention
  assert not any(r['metric_id']==71 and r['date']=='2026-10-10' for r in values)
+
+
+def test_project_metrics_save_without_any_features(client,db):
+ # Remove all live features without deleting their historical records.
+ db.execute("UPDATE project_feature SET archived_at=CURRENT_TIMESTAMP WHERE project_id=1")
+ boot=client.get('/dashboard/api/maintain/bootstrap').json()
+ assert not [f for f in boot['features'] if f['project_id']==1]
+ payload={'project_id':1,'stat_date':'2026-10-30','items':[{'metric_id':11,'value':'123','expected_version':0}]}
+ response=client.post('/dashboard/api/maintain/data',json=payload)
+ assert response.status_code==200,response.text
+ assert response.json()['saved']==1
+ rows=client.get('/dashboard/api/maintain/data?project_id=1&stat_date=2026-10-30').json()['items']
+ saved=next(r for r in rows if r['metric_id']==11)
+ assert saved['value']=='123' and saved['feature_id'] is None
+ payload['items'][0].update(value='124',expected_version=saved['row_version'])
+ assert client.post('/dashboard/api/maintain/data',json=payload).status_code==200

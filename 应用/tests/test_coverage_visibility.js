@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),path=require('path');
+const home=fs.readFileSync(path.join(__dirname,'../static/home.js'),'utf8');
+const section={hidden:false},box={innerHTML:'',closest:()=>section},date={textContent:''};
+const c=vm.createContext({homeData:{metrics:[]},selectedDate:'2026-11-08',$:s=>s==='#coverageItems'?box:date,pretty:x=>x,esc:String,fmt:x=>x===null?'—':String(x),value:()=>null});
+vm.runInContext(home.slice(home.indexOf('function renderCoverage('),home.indexOf('function renderFeatures(')),c);
+vm.runInContext('renderCoverage()',c);assert.equal(section.hidden,true);assert.equal(box.innerHTML,'');
+c.homeData.metrics=[{id:1,name:'累计用户数',category:'coverage',unit:'人'}];
+vm.runInContext('renderCoverage()',c);assert.equal(section.hidden,false);assert(box.innerHTML.includes('累计用户数'));assert(!box.innerHTML.includes('开通用户数'));
+c.homeData.metrics=[];vm.runInContext('renderCoverage()',c);assert.equal(section.hidden,true);assert.equal(box.innerHTML,'');
+console.log('用户覆盖显示检查通过：未配置隐藏、已配置按实际名称显示、无数据保留占位、切换不残留');

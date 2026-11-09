@@ -239,7 +239,7 @@ function renderMaintain(){content.replaceChildren();
  ctxLeft.append(dateRow);ctx.append(ctxLeft);const headActions=el('div',undefined,'page-heading-actions');
  headActions.append(buildImportDropdown(),buildHistoryButton());ctx.append(headActions);content.append(ctx);if(mtStatus==='error'){const error=el('div',undefined,'error-banner');error.append(el('p',mtMsg));const retry=el('button','重新加载数据','secondary');retry.onclick=async()=>{if(mtIsDirty()&&!confirm('重新加载会放弃当前未保存的修改，是否继续？'))return;mtDraft.clear();mtStash.delete(mtProject+'|'+mtDate);await mtLoadData();render();};error.append(retry);content.append(error);} if(!mtBoot.projects.length)content.append(el('p','暂无有权访问的启用项目','maint-empty'));
  const grid=el('div',undefined,'maint-sections');
- for(const cat of mtBoot.categories)grid.append(mtSection(cat));
+ for(const cat of mtBoot.categories){if(!mtMetricsOf(cat.id).length)continue;if(cat.code==='feature'&&!mtFeaturesOf().length)continue;grid.append(mtSection(cat));}
  content.append(grid);
  updateSavebar();}
 document.querySelector('#saveMaintainBtn').addEventListener('click',saveMaintain);
