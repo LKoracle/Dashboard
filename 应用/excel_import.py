@@ -167,7 +167,7 @@ def register(S):
             ('数据定位','项目＋指标编码＋功能＋统计日期相同为同一条数据，已有数据会更新。'),
             ('指标与功能','保留项目、指标编码及对应功能；指标名称和单位用于核对，不改变指标配置。'),
             ('数值','直接填写非负数；比例填写 0～100（如 68.5 表示 68.5%），也支持 Excel 百分比单元格。空白数值跳过，不清空已有数据。'),
-            ('日期','使用 YYYY-MM-DD 或 Excel 日期；不接受未来日期。留存统计日期为已结束的观察日。'),
+            ('日期','使用 YYYY-MM-DD 或 Excel 日期；不接受未来日期。留存统计日期为观察日，允许当日数据。'),
             ('校验与导入','先点击导入校验，查看有效、无效、新增、修改统计，再确认导入有效数据。重复数据行全部无效。'),
             ('结果下载','在原数据工作表右侧标注校验结果、处理类型、状态、说明、原值与导入值；原始数据保持不变。'),
             ('限制','仅支持 .xlsx，2 MB、最多 1,000 条；不接受公式作为导入字段。回执保留 24 小时。'),
@@ -219,7 +219,6 @@ def register(S):
                         if m['category_code']!='feature' and fname:raise HTTPException(400,'该指标不支持按功能录入')
                         day=import_date(cells['统计日期'])
                         if day>S._business_today():raise HTTPException(400,'不能导入未来统计日')
-                        if m['category_code']=='retention' and day>=S._business_today():raise HTTPException(400,'留存观察日必须已经结束')
                         value=number_value(cells['数值'],m,S)
                         stored=day-S.timedelta(days=7) if m['category_code']=='retention' else day
                         c.execute('SELECT id,value_number,row_version FROM metric_entry WHERE project_id=%s AND metric_id=%s AND feature_id<=>%s AND stat_date=%s',(p['id'],m['id'],fid,stored));old=c.fetchone()

@@ -140,3 +140,12 @@ def test_duplicate_across_worksheets_and_unchanged_value(client,db):
  result=client.post('/dashboard/api/maintain/import/excel/'+data['batch_id']+'/commit').json()
  assert result['counts']['inserted']==result['counts']['updated']==0
  assert db.execute('SELECT row_version FROM metric_entry WHERE id=1').fetchone()[0]==1
+
+
+def test_retention_today_import_allowed_future_rejected(client,db):
+ data=preview(client,workbook([row('M31',day='2026-10-31',value=70,unit='%'),row('M31',day='2026-11-01',value=71,unit='%')])).json()
+ assert data['counts']['valid']==1 and data['counts']['invalid']==1,data
+ result=client.post('/dashboard/api/maintain/import/excel/'+data['batch_id']+'/commit')
+ assert result.status_code==200,result.text
+ assert result.json()['counts']['inserted']==1
+ assert db.execute("SELECT value_number FROM metric_entry WHERE metric_id=31 AND stat_date='2026-10-24'").fetchone()[0]==70

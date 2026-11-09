@@ -1301,7 +1301,6 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB',dry_run=Fa
         metric_map={r['id']:r for r in metric_rows}
         c.execute('SELECT id FROM project_feature WHERE project_id=%s AND archived_at IS NULL',(data.project_id,))
         feature_ids={r['id'] for r in c.fetchall()}
-        has_retention=False
         prepared=[]
         seen=set()
         for item in data.items:
@@ -1313,8 +1312,6 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB',dry_run=Fa
                 raise HTTPException(400,'指标不存在或已停用，请刷新后重试')
             if item.expected_metric_version is not None and item.expected_metric_version!=mrow['row_version']:
                 raise HTTPException(409,'指标配置已变化，请重新上传校验')
-            if mrow['cat_code']=='retention':
-                has_retention=True
             if item.feature_id is not None:
                 if item.feature_id not in feature_ids:
                     raise HTTPException(400,'所选功能不存在或已归档')
@@ -1324,8 +1321,6 @@ def save_maintenance(data,request,action='maintain.edit',source='WEB',dry_run=Fa
                 raise HTTPException(400,f'「{mrow["name"]}」为功能使用指标，需按功能逐行录入')
             raw=(item.value or '').strip()
             prepared.append((item.metric_id,item.feature_id,_validate_value(raw,mrow) if raw else None))
-        if has_retention and date>=today:
-            raise HTTPException(400,'7日留存只能保存已结束的观察日，请选择今天之前的日期')
         # 生效值 = 库中已有值 + 本次提交值，用于跨指标校验
         c.execute('''SELECT e.metric_id,e.feature_id,e.value_number FROM metric_entry e
           JOIN metric m ON m.id=e.metric_id JOIN metric_category cat ON cat.id=m.category_id
@@ -1440,7 +1435,6 @@ def validate_import_csv(c,user,data):
             raw=_validate_value(raw,metric)
             day=datetime.strptime((row.get('统计日期') or '').strip(),'%Y-%m-%d').date()
             if day>_business_today():raise HTTPException(400,'不能导入未来统计日')
-            if metric['category_code']=='retention' and day>=_business_today():raise HTTPException(400,'留存观察日必须已经结束')
             feature=(row.get('功能') or '').strip()
             if metric['category_code']=='feature':
                 if feature not in features:raise HTTPException(400,'功能不存在或已归档')

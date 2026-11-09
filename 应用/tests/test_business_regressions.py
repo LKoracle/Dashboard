@@ -78,7 +78,9 @@ def test_retention_observation_date_mapping_and_completion(client,db):
  payload={'project_id':1,'stat_date':'2026-10-30','items':[{'metric_id':31,'value':'70.5'}]}
  assert client.post('/dashboard/api/maintain/data',json=payload).status_code==200
  assert db.execute("SELECT value_number FROM metric_entry WHERE metric_id=31 AND stat_date='2026-10-23'").fetchone()[0]==70.5
- payload['stat_date']='2026-10-31';assert client.post('/dashboard/api/maintain/data',json=payload).status_code==400
+ payload['stat_date']='2026-10-31';assert client.post('/dashboard/api/maintain/data',json=payload).status_code==200
+ assert db.execute("SELECT value_number FROM metric_entry WHERE metric_id=31 AND stat_date='2026-10-24'").fetchone()[0]==70.5
+ payload['stat_date']='2026-11-01';assert client.post('/dashboard/api/maintain/data',json=payload).status_code==400
 
 def test_saved_versions_and_atomic_conflict(client,db):
  payload={'project_id':1,'stat_date':'2026-10-29','items':[{'metric_id':61,'feature_id':1,'value':'12','expected_version':1}]}

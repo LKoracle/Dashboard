@@ -149,7 +149,7 @@ function mtFieldBlock(m,fid,compact){const k=mtKey(m.id,fid);
  const inp=document.createElement('input');inp.id='mt-'+k;
  inp.inputmode=(m.unit==='人'||m.unit==='次')?'numeric':'decimal';
  inp.autocomplete='off';inp.placeholder=(m.unit==='人'||m.unit==='次')?'请输入人数或次数':'请输入数值';
- inp.disabled=!mtDataReady||!mtCanEdit||mtSaving||(mtBoot.categories.find(c=>c.id===m.category_id)?.code==='retention'&&mtDate>=mtToday());inp.value=mtDraft.has(k)?(mtDraft.get(k)||''):(mtValues.get(k)||'');
+ inp.disabled=!mtDataReady||!mtCanEdit||mtSaving;inp.value=mtDraft.has(k)?(mtDraft.get(k)||''):(mtValues.get(k)||'');
  if(compact)inp.setAttribute('aria-label',m.name);
  box.append(inp);
  box.append(el('span',m.unit||'单位待确认','maint-unit'));
@@ -192,7 +192,7 @@ function mtSection(cat){const metrics=mtMetricsOf(cat.id);
  const hints={coverage:'截至所选统计日的累计数据',activity:'按所选自然日录入',depth:'有效会话数口径待确认时仍可录入',retention:'基准日 '+mtShiftDate(mtDate,-7).replaceAll('-','.')+' → 第 7 天观察日 '+mtDate.replaceAll('-','.'),performance:'同一批成功请求，均从发送指令开始计时',feature:'按项目功能逐行录入当日及累计使用数据',funnel:'维护当前项目已启用的漏斗指标'};
  if(hints[cat.code])head.append(el('span',hints[cat.code],'maint-hint'));
  section.append(head);
- if(cat.code==='retention'&&mtDate>=mtToday()){const warn=el('p','统计日期为观察日；7 日留存仅可录入今天之前已结束的观察日。','maint-warn');section.append(warn);}
+ if(cat.code==='retention'&&mtDate===mtToday()){const warn=el('p','允许录入当日留存数据；当日尚未结束，数值可后续更新。','maint-warn');section.append(warn);}
  if(cat.code==='feature'){const features=mtFeaturesOf();
   if(!features.length){section.append(el('p','该项目尚未配置功能清单，请先到「项目管理」中维护。','maint-empty'));return section;}
   if(!metrics.length){section.append(el('p','当前项目暂无已启用的功能使用指标，请先到「指标管理」中维护。','maint-empty'));return section;}
