@@ -12,7 +12,7 @@
 .mt-date-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .mt-date-label{font-size:12px;color:#64748b;white-space:nowrap}
 .mt-stepper{display:flex;align-items:center;background:#fff;border:1px solid #d8e1ed;border-radius:8px;overflow:hidden}
-.mt-stepper input[type=date]{width:165px;border:0;border-radius:0;min-height:36px;padding:6px 10px;color:#253952;font-size:13px;background:#fff}
+.mt-stepper input[type=date]{width:125px;border:0;border-radius:0;min-height:36px;padding:6px 10px;color:#253952;font-size:13px;background:#fff}
 .mt-stepper button{display:flex;align-items:center;justify-content:center;width:30px;height:36px;border:0;background:#fff;color:#64748b;flex-shrink:0;cursor:pointer;padding:0}
 .mt-stepper button:hover:not(:disabled){background:#eff6ff;color:#2563eb}
 .mt-stepper button:disabled{color:#cbd5e1;cursor:default}
