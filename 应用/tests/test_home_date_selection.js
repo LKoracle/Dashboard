@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const charts=fs.readFileSync(path.join(__dirname,'../static/home-charts.js'),'utf8'),home=fs.readFileSync(path.join(__dirname,'../static/home.js'),'utf8');
+const nodes={'#calendar':{hidden:false},'#calendarDays':{innerHTML:''},'#calendarTitle':{},'#dateTrigger':{setAttribute(k,v){this[k]=v;}}};
+const button={dataset:{calendarDay:'2026-11-04'}};let loads=0,updates=0;
+const c=vm.createContext({selectedDate:'2026-11-08',pendingDate:'2026-11-08',today:'2026-11-09',calendarMonth:'2026-11-01',$:s=>nodes[s],$$:()=>[button],controls:()=>updates++,loadData:()=>loads++});
+vm.runInContext(charts.slice(0,charts.indexOf('function renderTrend('))+charts.slice(charts.indexOf('function closeCalendar(')),c);
+vm.runInContext(home.slice(home.indexOf('function selectDate('),home.indexOf("$('#prevDate')",home.indexOf('function selectDate('))),c);
+vm.runInContext('renderCalendar()',c);button.onclick();
+assert.equal(c.selectedDate,'2026-11-04');assert.equal(c.pendingDate,'2026-11-04');assert.equal(loads,1);assert.equal(updates,1);assert.equal(nodes['#calendar'].hidden,true);assert.equal(nodes['#dateTrigger']['aria-expanded'],'false');
+button.dataset.calendarDay='2026-11-06';button.onclick();assert.equal(c.selectedDate,'2026-11-06');assert.equal(loads,2);
+button.dataset.calendarDay='2026-11-10';button.onclick();assert.equal(c.selectedDate,'2026-11-06');assert.equal(loads,2);
+console.log('首页日期点选通过：立即提交日期、刷新取数、收起日历、再次选择及未来日期限制');
